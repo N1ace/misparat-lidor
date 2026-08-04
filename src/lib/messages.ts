@@ -73,6 +73,43 @@ export function emailReminder(opts: {
   };
 }
 
+export function smsReschedule(opts: {
+  name: string;
+  service: string;
+  startAt: Date;
+}): string {
+  const day = hebrewWeekday(formatJerusalem(opts.startAt, "yyyy-MM-dd"));
+  const time = formatJerusalem(opts.startAt, "HH:mm");
+  return `היי ${opts.name}, התור ל${opts.service} עודכן ליום ${day} בשעה ${time}. ${SHOP.name}`;
+}
+
+export function emailReschedule(opts: {
+  name: string;
+  service: string;
+  startAt: Date;
+  cancelUrl?: string;
+}): { subject: string; text: string } {
+  const day = hebrewWeekday(formatJerusalem(opts.startAt, "yyyy-MM-dd"));
+  const time = formatJerusalem(opts.startAt, "HH:mm");
+  const date = formatJerusalem(opts.startAt, "dd/MM/yyyy");
+  return {
+    subject: `עדכון תור — ${SHOP.name}`,
+    text: [
+      `שלום ${opts.name},`,
+      ``,
+      `זמן התור שלך עודכן.`,
+      `שירות: ${opts.service}`,
+      `יום ${day}, ${date} בשעה ${time}`,
+      `כתובת: ${SHOP.address}`,
+      opts.cancelUrl ? `לביטול: ${opts.cancelUrl}` : null,
+      ``,
+      SHOP.name,
+    ]
+      .filter((l) => l !== null)
+      .join("\n"),
+  };
+}
+
 export function otpEmailBody(code: string): { subject: string; text: string } {
   return {
     subject: `קוד לשינוי סיסמה — ${SHOP.name}`,

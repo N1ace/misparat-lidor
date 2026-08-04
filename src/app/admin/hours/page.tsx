@@ -45,27 +45,29 @@ export default function AdminHoursPage() {
 
   return (
     <div>
-      <h1 className="display text-3xl">שעות פעילות</h1>
-      <p className="mt-2 text-sm text-[var(--muted)]">שבת בלי שורה = סגור</p>
-      <ul className="mt-6 space-y-3">
+      <div className="admin-page-head">
+        <div>
+          <h1>שעות פעילות</h1>
+          <p>עדכון כאן מתעדכן אוטומטית באתר (תפריט שעות ו״פתוח עכשיו״) ובזמינות הזמנה אונליין. יום בלי שורה = סגור.</p>
+        </div>
+      </div>
+      <ul className="admin-stack">
         {hours.map((h, i) => (
-          <li key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--card)] p-3">
+          <li key={i} className="admin-card admin-row" style={{ maxWidth: 520, alignItems: "center" }}>
             <span className="w-16 font-semibold">{DAY_NAMES[h.day_of_week]}</span>
             <input
               type="time"
               value={h.open_time}
               onChange={(e) => setHours((prev) => prev.map((x, j) => (j === i ? { ...x, open_time: e.target.value } : x)))}
-              className="rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1"
             />
             <input
               type="time"
               value={h.close_time}
               onChange={(e) => setHours((prev) => prev.map((x, j) => (j === i ? { ...x, close_time: e.target.value } : x)))}
-              className="rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1"
             />
             <button
               type="button"
-              className="text-sm text-red-300"
+              className="admin-danger-link"
               onClick={() => setHours((prev) => prev.filter((_, j) => j !== i))}
             >
               מחק
@@ -75,15 +77,15 @@ export default function AdminHoursPage() {
       </ul>
       <div className="mt-4 flex flex-wrap gap-2">
         {DAY_NAMES.map((n, d) => (
-          <button key={n} type="button" onClick={() => addRow(d)} className="rounded-full border border-[var(--line)] px-3 py-1 text-sm">
+          <button key={n} type="button" onClick={() => addRow(d)} className="cal-chip">
             + {n}
           </button>
         ))}
       </div>
-      <button type="button" onClick={save} className="mt-6 rounded-xl bg-[var(--accent)] px-5 py-3 font-bold text-[#1a0f0a]">
+      <button type="button" onClick={save} className="admin-btn-primary" style={{ marginTop: "1rem" }}>
         שמור שעות
       </button>
-      {msg && <p className="mt-2 text-sm text-[var(--muted)]">{msg}</p>}
+      {msg && <p className="admin-ok" style={{ marginTop: "0.75rem" }}>{msg}</p>}
     </div>
   );
 }

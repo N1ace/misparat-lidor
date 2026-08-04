@@ -1,0 +1,56 @@
+import Link from "next/link";
+import { SHOP, waMe } from "@/lib/shop";
+
+export function SiteFooter() {
+  return (
+    <footer className="site">
+      <div className="wrap">
+        <div className="cols">
+          <div>
+            <Link className="logo" href="/">
+              <span className="icn i-sign" aria-hidden="true" />
+              {SHOP.name}
+            </Link>
+            <p style={{ color: "var(--muted)", maxInlineSize: "38ch", marginBlockStart: "0.8rem" }}>
+              מספרה באשדוד — תספורות מדויקות, זקן, וילדים. קובעים תור אונליין, מגיעים בשעה.
+            </p>
+          </div>
+          <nav aria-label="ניווט תחתון">
+            <a href="/#services">מחירון</a>
+            <a href="/#our-shop">המספרה</a>
+            <a href="/#gallery">עבודות</a>
+            <a href="/#faq">שאלות נפוצות</a>
+            <a href="/#location">איפה אנחנו</a>
+            <Link href="/booking">קביעת תור</Link>
+          </nav>
+          <div className="footer-aside">
+            <a className="phone-ltr footer-phone" href={`tel:${SHOP.phoneE164}`}>
+              <bdi>{SHOP.phoneDisplay}</bdi>
+            </a>
+            <p style={{ color: "var(--muted)", marginBlock: "0.5rem 0" }}>{SHOP.addressShort}</p>
+            <div className="footer-social">
+              <h3>רשתות חברתיות</h3>
+              <div className="social-row">
+                <a
+                  className="social-btn social-wa"
+                  href={waMe("היי, רציתי לשאול לגבי תור")}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="וואטסאפ"
+                >
+                  <span className="icn i-whatsapp" aria-hidden="true" />
+                </a>
+              </div>
+            </div>
+            <nav className="footer-legal" aria-label="ניהול">
+              <Link href="/admin">כניסת מנהל</Link>
+            </nav>
+          </div>
+        </div>
+        <p className="fine">
+          © <bdi>{new Date().getFullYear()}</bdi> {SHOP.name}. כל הזכויות שמורות.
+        </p>
+      </div>
+    </footer>
+  );
+}

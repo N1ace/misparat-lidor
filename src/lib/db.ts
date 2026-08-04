@@ -3,7 +3,7 @@ import postgres from "postgres";
 const globalForSql = globalThis as unknown as { __sql?: ReturnType<typeof postgres> };
 
 export function getSql() {
-  const url = process.env.DATABASE_URL;
+  const url = process.env.DATABASE_URL?.trim();
   if (!url) {
     throw new Error("DATABASE_URL is not set");
   }
@@ -11,6 +11,8 @@ export function getSql() {
     globalForSql.__sql = postgres(url, {
       prepare: false, // required for PgBouncer transaction pooler
       max: 10,
+      ssl: "require",
+      connect_timeout: 20,
     });
   }
   return globalForSql.__sql;

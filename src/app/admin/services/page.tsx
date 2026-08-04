@@ -9,6 +9,7 @@ type Service = {
   price_agorot: number;
   sort_order: number;
   active: boolean;
+  image_path: string | null;
 };
 
 export default function AdminServicesPage() {
@@ -16,6 +17,7 @@ export default function AdminServicesPage() {
   const [name, setName] = useState("");
   const [duration, setDuration] = useState(30);
   const [price, setPrice] = useState(80);
+  const [msg, setMsg] = useState<string | null>(null);
 
   async function load() {
     const res = await fetch("/api/admin/services");
@@ -28,15 +30,18 @@ export default function AdminServicesPage() {
   }, []);
 
   async function save(s: Service) {
+    setMsg(null);
     await fetch("/api/admin/services", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(s),
     });
+    setMsg("נשמר");
     await load();
   }
 
   async function create() {
+    if (!name.trim()) return;
     await fetch("/api/admin/services", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -50,23 +55,46 @@ export default function AdminServicesPage() {
     await load();
   }
 
+  async function remove(s: Service) {
+    if (!confirm(`למחוק את השירות \"${s.name}\"?`)) return;
+    setMsg(null);
+    const res = await fetch(`/api/admin/services?id=${s.id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setMsg(data.error || "שגיאה במחיקה");
+      return;
+    }
+    setMsg(data.soft ? data.message || "סומן כלא פעיל" : "נמחק");
+    await load();
+  }
+
   return (
     <div>
-      <h1 className="display text-3xl">שירותים</h1>
-      <ul className="mt-6 space-y-3">
+      <div className="admin-page-head">
+        <div>
+          <h1>שירותים</h1>
+          <p>מחירון, משכי זמן ופעיל/לא פעיל.</p>
+        </div>
+      </div>
+      {msg ? <p className="admin-ok">{msg}</p> : null}
+
+      <ul className="admin-stack">
         {services.map((s) => (
-          <li key={s.id} className="space-y-2 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4">
-            <input
-              className="w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2"
-              value={s.name}
-              onChange={(e) => setServices((prev) => prev.map((x) => (x.id === s.id ? { ...x, name: e.target.value } : x)))}
-            />
-            <div className="flex flex-wrap gap-2">
-              <label className="text-sm">
-                דקות{" "}
+          <li key={s.id} className="admin-card admin-form">
+            <label>
+              <span>שם</span>
+              <input
+                value={s.name}
+                onChange={(e) =>
+                  setServices((prev) => prev.map((x) => (x.id === s.id ? { ...x, name: e.target.value } : x)))
+                }
+              />
+            </label>
+            <div className="admin-row">
+              <label>
+                <span>דקות</span>
                 <input
                   type="number"
-                  className="w-20 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1"
                   value={s.duration_minutes}
                   onChange={(e) =>
                     setServices((prev) =>
@@ -75,20 +103,21 @@ export default function AdminServicesPage() {
                   }
                 />
               </label>
-              <label className="text-sm">
-                ₪{" "}
+              <label>
+                <span>מחיר ₪</span>
                 <input
                   type="number"
-                  className="w-24 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1"
                   value={s.price_agorot / 100}
                   onChange={(e) =>
                     setServices((prev) =>
-                      prev.map((x) => (x.id === s.id ? { ...x, price_agorot: Math.round(Number(e.target.value) * 100) } : x)),
+                      prev.map((x) =>
+                        x.id === s.id ? { ...x, price_agorot: Math.round(Number(e.target.value) * 100) } : x,
+                      ),
                     )
                   }
                 />
               </label>
-              <label className="flex items-center gap-2 text-sm">
+              <label className="admin-check" style={{ alignSelf: "end", paddingBottom: "0.7rem" }}>
                 <input
                   type="checkbox"
                   checked={s.active}
@@ -96,24 +125,51 @@ export default function AdminServicesPage() {
                     setServices((prev) => prev.map((x) => (x.id === s.id ? { ...x, active: e.target.checked } : x)))
                   }
                 />
-                פעיל
+                <span>פעיל</span>
               </label>
             </div>
-            <button type="button" onClick={() => save(s)} className="rounded-xl bg-[var(--accent)] px-4 py-2 font-bold text-[#1a0f0a]">
-              שמור
-            </button>
+            <label>
+              <span>נתיב תמונה (למשל /media/gallery-01.jpg)</span>
+              <input
+                value={s.image_path || ""}
+                dir="ltr"
+                placeholder="/media/gallery-01.jpg"
+                onChange={(e) =>
+                  setServices((prev) =>
+                    prev.map((x) => (x.id === s.id ? { ...x, image_path: e.target.value || null } : x)),
+                  )
+                }
+              />
+            </label>
+            <div className="admin-row" style={{ alignItems: "center" }}>
+              <button type="button" onClick={() => void save(s)} className="admin-btn-primary">
+                שמור
+              </button>
+              <button type="button" className="admin-danger-link" onClick={() => void remove(s)}>
+                מחק שירות
+              </button>
+            </div>
           </li>
         ))}
       </ul>
 
-      <div className="mt-8 space-y-2 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4">
-        <h2 className="font-bold">שירות חדש</h2>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="שם" className="w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
-        <div className="flex gap-2">
-          <input type="number" value={duration} onChange={(e) => setDuration(Number(e.target.value))} className="w-24 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
-          <input type="number" value={price} onChange={(e) => setPrice(Number(e.target.value))} className="w-24 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
+      <div className="admin-card admin-form" style={{ marginTop: "1rem" }}>
+        <h2>שירות חדש</h2>
+        <label>
+          <span>שם</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <div className="admin-row">
+          <label>
+            <span>דקות</span>
+            <input type="number" value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
+          </label>
+          <label>
+            <span>מחיר ₪</span>
+            <input type="number" value={price} onChange={(e) => setPrice(Number(e.target.value))} />
+          </label>
         </div>
-        <button type="button" onClick={create} className="rounded-xl bg-[var(--accent)] px-4 py-2 font-bold text-[#1a0f0a]">
+        <button type="button" onClick={() => void create()} className="admin-btn-primary">
           הוסף
         </button>
       </div>

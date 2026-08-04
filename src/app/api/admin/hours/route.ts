@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readSession } from "@/lib/auth";
 import { getSql } from "@/lib/db";
+import { ensureWorkingHoursSeeded } from "@/lib/hours";
 
 export const runtime = "nodejs";
 
@@ -8,6 +9,7 @@ export async function GET() {
   if (!(await readSession())) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  await ensureWorkingHoursSeeded();
   const sql = getSql();
   const rows = await sql`
     select id, day_of_week, open_time::text, close_time::text

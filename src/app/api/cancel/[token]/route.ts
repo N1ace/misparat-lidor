@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
-import { smsCancellation } from "@/lib/messages";
+import { getShopSettings } from "@/lib/settings";
 
 export const runtime = "nodejs";
 
@@ -10,48 +10,45 @@ export async function POST(
 ) {
   const { token } = await ctx.params;
   const sql = getSql();
+  const settings = await getShopSettings();
 
   try {
     const result = await sql.begin(async (tx) => {
       const [appt] = await tx<{
         id: string;
-        client_name: string;
-        client_phone: string;
-        client_email: string | null;
         status: string;
+        start: Date;
       }[]>`
-        select id, client_name, client_phone, client_email, status
+        select id, status, lower(period) as start
         from appointments where cancel_token = ${token}
         for update
       `;
       if (!appt) return { error: "not_found" as const };
       if (appt.status === "cancelled") return { error: "already" as const };
 
-      await tx`update appointments set status = 'cancelled' where id = ${appt.id}::uuid`;
-
-      const body = smsCancellation({ name: appt.client_name });
-      await tx`
-        insert into outbox (appointment_id, kind, channel, recipient, body, send_after)
-        values (${appt.id}::uuid, 'cancellation', 'sms', ${appt.client_phone}, ${body}, now())
-        on conflict (appointment_id, kind, channel) do nothing
-      `;
-      if (appt.client_email) {
-        await tx`
-          insert into outbox (appointment_id, kind, channel, recipient, body, send_after)
-          values (
-            ${appt.id}::uuid, 'cancellation', 'email', ${appt.client_email},
-            ${`ביטול תור\n\nשלום ${appt.client_name},\nהתור שלך בוטל.`},
-            now()
-          )
-          on conflict (appointment_id, kind, channel) do nothing
-        `;
+      const msLeft = new Date(appt.start).getTime() - Date.now();
+      if (msLeft < settings.min_client_cancel_minutes * 60_000) {
+        return { error: "too_late" as const };
       }
+
+      // Client-initiated cancel: no cancellation alerts
+      await tx`update appointments set status = 'cancelled' where id = ${appt.id}::uuid`;
+      await tx`
+        update outbox set status = 'failed', last_error = 'appointment cancelled by client'
+        where appointment_id = ${appt.id}::uuid and status = 'pending'
+      `;
       return { ok: true as const };
     });
 
     if ("error" in result) {
       if (result.error === "not_found") {
         return NextResponse.json({ error: "לא נמצא" }, { status: 404 });
+      }
+      if (result.error === "too_late") {
+        return NextResponse.json(
+          { error: `לא ניתן לבטל פחות מ־${settings.min_client_cancel_minutes} דקות לפני התור` },
+          { status: 400 },
+        );
       }
       return NextResponse.json({ ok: true });
     }

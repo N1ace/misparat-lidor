@@ -34,22 +34,35 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-4">
-      <h1 className="display text-center text-3xl">כניסת מנהל</h1>
-      <form onSubmit={onSubmit} className="mt-8 space-y-4">
+    <main
+      className="flex min-h-dvh items-center justify-center overflow-y-auto"
+      style={{
+        background: "#f4f5f7",
+        color: "#1f2933",
+        padding:
+          "max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left))",
+      }}
+    >
+      <form
+        onSubmit={onSubmit}
+        className="w-full max-w-sm rounded-2xl border border-[#e8eaed] bg-white p-6 shadow-sm sm:p-8"
+        style={{ minWidth: 0 }}
+      >
+        <h1 className="text-center text-2xl font-extrabold">כניסת מנהל</h1>
+        <p className="mt-2 text-center text-sm text-[#6b7280]">מספרת לידור</p>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-xl border border-[var(--line)] bg-[var(--card)] px-4 py-3"
+          className="mt-8 w-full rounded-xl border border-[#e8eaed] bg-[#f9fafb] px-4 py-3 outline-none focus:border-[#ef7a3d]"
           placeholder="סיסמה"
           autoFocus
         />
-        {error && <p className="text-red-300">{error}</p>}
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-xl bg-[var(--accent)] py-3 font-bold text-[#1a0f0a]"
+          className="mt-4 w-full rounded-xl bg-[#ef7a3d] py-3 font-bold text-white disabled:opacity-50"
         >
           {loading ? "נכנס…" : "כניסה"}
         </button>

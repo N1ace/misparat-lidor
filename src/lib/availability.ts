@@ -1,5 +1,6 @@
 import { getSql } from "./db";
 import { LEAD_MINUTES, SLOT_STEP_MINUTES } from "./shop";
+import { getShopSettings } from "./settings";
 import { jerusalemDayOfWeek, wallTimeToUtc } from "./time";
 
 export type TimeWindow = { open_time: string; close_time: string };
@@ -100,12 +101,34 @@ export async function getAvailableSlots(
     ...blocks.map((b) => ({ start: new Date(b.lower), end: new Date(b.upper) })),
   ];
 
+  let leadMinutes = LEAD_MINUTES;
+  let stepMinutes = SLOT_STEP_MINUTES;
+  let bufferMinutes = 0;
+  try {
+    const settings = await getShopSettings();
+    leadMinutes = settings.lead_minutes;
+    stepMinutes = settings.slot_step_minutes;
+    bufferMinutes = settings.buffer_minutes;
+  } catch {
+    /* defaults */
+  }
+
+  const busyWithBuffer =
+    bufferMinutes > 0
+      ? busy.map((b) => ({
+          start: new Date(b.start.getTime() - bufferMinutes * 60_000),
+          end: new Date(b.end.getTime() + bufferMinutes * 60_000),
+        }))
+      : busy;
+
   return computeAvailableSlots({
     dateYmd,
     durationMinutes: service.duration_minutes,
     windows,
-    busy,
+    busy: busyWithBuffer,
     now: opts?.now,
+    leadMinutes,
+    stepMinutes,
     bypassLead: opts?.bypassLead,
   });
 }

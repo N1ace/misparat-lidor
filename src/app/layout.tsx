@@ -1,26 +1,26 @@
 import type { Metadata, Viewport } from "next";
-import { Heebo, Rubik } from "next/font/google";
+import { Assistant, Karantina } from "next/font/google";
 import "./globals.css";
 
-const heebo = Heebo({
+const assistant = Assistant({
   subsets: ["hebrew", "latin"],
-  variable: "--font-heebo",
-  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-assistant",
+  weight: ["400", "600", "700"],
 });
 
-const rubik = Rubik({
+const karantina = Karantina({
   subsets: ["hebrew", "latin"],
-  variable: "--font-rubik",
-  weight: ["700", "800", "900"],
+  variable: "--font-karantina",
+  weight: ["400", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "מספרת לידור — קביעת תור",
-  description: "קביעת תור אונליין במספרת לידור, אבנר בן נר אשדוד",
+  title: "מספרת לידור — אשדוד",
+  description: "תספורות מדויקות באבנר בן נר 1, אשדוד. קביעת תור אונליין.",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0d0e10",
+  themeColor: "#0F1613",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -28,18 +28,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="he" dir="rtl" className={`${heebo.variable} ${rubik.variable}`}>
-      <body
-        className="antialiased"
-        style={
-          {
-            ["--font-body" as string]: "var(--font-heebo), system-ui, sans-serif",
-            ["--font-display" as string]: "var(--font-rubik), var(--font-heebo), system-ui, sans-serif",
-          } as React.CSSProperties
-        }
-      >
-        {children}
-      </body>
+    <html lang="he" dir="rtl" className={`${assistant.variable} ${karantina.variable}`}>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }

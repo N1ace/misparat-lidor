@@ -1,23 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
-import { isValidEmail, normalizePhoneIL } from "@/lib/phone";
 import { rateLimit } from "@/lib/rate-limit";
 import { emailConfirmation, emailReminder, smsConfirmation, smsReminder } from "@/lib/messages";
 import { formatJerusalem } from "@/lib/time";
 import { SHOP } from "@/lib/shop";
+import { getShopSettings } from "@/lib/settings";
+import { readClientSession } from "@/lib/client-auth";
 
 export const runtime = "nodejs";
 
 const bodySchema = z.object({
   serviceId: z.string().uuid(),
   startAt: z.string().min(1),
-  name: z.string().trim().min(2).max(80),
-  phone: z.string().min(8).max(20),
-  email: z.union([z.string().email(), z.literal("")]).optional(),
 });
 
 export async function POST(req: NextRequest) {
+  const session = await readClientSession();
+  if (!session) {
+    return NextResponse.json({ error: "יש להתחבר לפני קביעת תור", code: "auth" }, { status: 401 });
+  }
+
   const ip = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for") || "unknown";
 
   let json: unknown;
@@ -32,22 +35,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "נא למלא את כל השדות" }, { status: 400 });
   }
 
-  const phone = normalizePhoneIL(parsed.data.phone);
-  if (!phone) {
-    return NextResponse.json({ error: "מספר טלפון לא תקין" }, { status: 400 });
-  }
-
-  const emailRaw = parsed.data.email?.trim() || "";
-  const email = emailRaw ? emailRaw.toLowerCase() : null;
-  if (email && !isValidEmail(email)) {
-    return NextResponse.json({ error: "אימייל לא תקין" }, { status: 400 });
-  }
-
-  if (!rateLimit(`book:ip:${ip}`, 5, 60 * 60 * 1000) || !rateLimit(`book:phone:${phone}`, 5, 60 * 60 * 1000)) {
+  if (
+    !rateLimit(`book:ip:${ip}`, 5, 60 * 60 * 1000) ||
+    !rateLimit(`book:phone:${session.phone}`, 5, 60 * 60 * 1000)
+  ) {
     return NextResponse.json({ error: "יותר מדי בקשות. נסו שוב בעוד שעה." }, { status: 429 });
   }
 
   const sql = getSql();
+  const [client] = await sql<{
+    id: string;
+    name: string;
+    phone: string;
+    email: string | null;
+    notify_channel: "sms" | "email";
+  }[]>`
+    select id, name, phone, email, notify_channel from clients where id = ${session.clientId}::uuid
+  `;
+  if (!client) {
+    return NextResponse.json({ error: "יש להתחבר מחדש", code: "auth" }, { status: 401 });
+  }
+
   const [service] = await sql<{
     id: string;
     name: string;
@@ -65,29 +73,43 @@ export async function POST(req: NextRequest) {
   if (Number.isNaN(start.getTime())) {
     return NextResponse.json({ error: "שעה לא תקינה" }, { status: 400 });
   }
+  const settings = await getShopSettings();
+  const horizonEnd = new Date();
+  horizonEnd.setDate(horizonEnd.getDate() + settings.online_booking_horizon_days);
+  if (start > horizonEnd) {
+    return NextResponse.json(
+      { error: `ניתן לקבוע עד ${settings.online_booking_horizon_days} ימים קדימה` },
+      { status: 400 },
+    );
+  }
   const end = new Date(start.getTime() + service.duration_minutes * 60_000);
   const cancelToken = crypto.randomUUID();
   const origin = req.nextUrl.origin;
   const cancelUrl = `${origin}/cancel/${cancelToken}`;
 
+  const channel = client.notify_channel || "sms";
+  if (channel === "email" && !client.email) {
+    return NextResponse.json({ error: "חסר אימייל להתראות — עדכנו בהגדרות החשבון" }, { status: 400 });
+  }
+
   const smsConfirm = smsConfirmation({
-    name: parsed.data.name,
+    name: client.name,
     service: service.name,
     startAt: start,
   });
   const smsRem = smsReminder({ time: formatJerusalem(start, "HH:mm") });
-  const mailConfirm = email ? emailConfirmation({
-    name: parsed.data.name,
+  const mailConfirm = emailConfirmation({
+    name: client.name,
     service: service.name,
     startAt: start,
     cancelUrl,
-  }) : null;
-  const mailRem = email ? emailReminder({
-    name: parsed.data.name,
+  });
+  const mailRem = emailReminder({
+    name: client.name,
     service: service.name,
     startAt: start,
     cancelUrl,
-  }) : null;
+  });
 
   const reminderAt = new Date(start.getTime() - 24 * 60 * 60 * 1000);
   const reminderSend = reminderAt < new Date() ? new Date() : reminderAt;
@@ -104,9 +126,9 @@ export async function POST(req: NextRequest) {
           ${service.name},
           ${service.duration_minutes},
           ${service.price_agorot},
-          ${parsed.data.name},
-          ${phone},
-          ${email},
+          ${client.name},
+          ${client.phone},
+          ${client.email},
           ${cancelToken},
           'online',
           'confirmed'
@@ -114,20 +136,32 @@ export async function POST(req: NextRequest) {
         returning id
       `;
 
-      await tx`
-        insert into outbox (appointment_id, kind, channel, recipient, body, send_after)
-        values
-          (${appt.id}::uuid, 'confirmation', 'sms', ${phone}, ${smsConfirm}, now()),
-          (${appt.id}::uuid, 'reminder', 'sms', ${phone}, ${smsRem}, ${reminderSend.toISOString()}::timestamptz)
-      `;
-
-      if (email && mailConfirm && mailRem) {
-        await tx`
-          insert into outbox (appointment_id, kind, channel, recipient, body, send_after)
-          values
-            (${appt.id}::uuid, 'confirmation', 'email', ${email}, ${`${mailConfirm.subject}\n\n${mailConfirm.text}`}, now()),
-            (${appt.id}::uuid, 'reminder', 'email', ${email}, ${`${mailRem.subject}\n\n${mailRem.text}`}, ${reminderSend.toISOString()}::timestamptz)
-        `;
+      if (channel === "sms") {
+        if (settings.notify_confirmation) {
+          await tx`
+            insert into outbox (appointment_id, kind, channel, recipient, body, send_after)
+            values (${appt.id}::uuid, 'confirmation', 'sms', ${client.phone}, ${smsConfirm}, now())
+          `;
+        }
+        if (settings.notify_reminder) {
+          await tx`
+            insert into outbox (appointment_id, kind, channel, recipient, body, send_after)
+            values (${appt.id}::uuid, 'reminder', 'sms', ${client.phone}, ${smsRem}, ${reminderSend.toISOString()}::timestamptz)
+          `;
+        }
+      } else if (client.email) {
+        if (settings.notify_confirmation) {
+          await tx`
+            insert into outbox (appointment_id, kind, channel, recipient, body, send_after)
+            values (${appt.id}::uuid, 'confirmation', 'email', ${client.email}, ${`${mailConfirm.subject}\n\n${mailConfirm.text}`}, now())
+          `;
+        }
+        if (settings.notify_reminder) {
+          await tx`
+            insert into outbox (appointment_id, kind, channel, recipient, body, send_after)
+            values (${appt.id}::uuid, 'reminder', 'email', ${client.email}, ${`${mailRem.subject}\n\n${mailRem.text}`}, ${reminderSend.toISOString()}::timestamptz)
+          `;
+        }
       }
 
       return appt;
@@ -138,6 +172,15 @@ export async function POST(req: NextRequest) {
       id: rows.id,
       cancelToken,
       shop: SHOP.name,
+      appointment: {
+        service: service.name,
+        start: start.toISOString(),
+        end: end.toISOString(),
+        clientName: client.name,
+        clientPhone: client.phone,
+        address: SHOP.address,
+        cancelUrl,
+      },
     });
   } catch (e: unknown) {
     const err = e as { code?: string; message?: string };

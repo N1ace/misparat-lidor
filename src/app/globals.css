@@ -1,58 +1,50 @@
 @import "tailwindcss";
+@import "../styles/lidor.css";
 
 :root {
-  --bg: #0d0e10;
-  --card: #16181b;
-  --line: #2a2d32;
-  --text: #f3f0ea;
-  --muted: #9a9690;
-  --accent: #c45c26;
-  --accent-hover: #d96a30;
+  --card: var(--surface);
+  --text: var(--ivory);
+  --accent: var(--brass);
+  --accent-hover: var(--brass-hi);
   --ok: #25d366;
-  --font-display: "Rubik", "Heebo", system-ui, sans-serif;
-  --font-body: "Heebo", system-ui, sans-serif;
+  --font-display: var(--font-karantina), "Karantina", cursive;
+  --font-body: var(--font-assistant), "Assistant", system-ui, sans-serif;
 }
 
 @theme inline {
   --color-bg: var(--bg);
-  --color-card: var(--card);
+  --color-card: var(--surface);
   --color-line: var(--line);
-  --color-text: var(--text);
+  --color-text: var(--ivory);
   --color-muted: var(--muted);
-  --color-accent: var(--accent);
+  --color-accent: var(--brass);
   --font-sans: var(--font-body);
 }
 
-* { box-sizing: border-box; }
-
-html {
-  scroll-behavior: smooth;
-}
-
 body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
   font-family: var(--font-body);
-  line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
-  min-height: 100dvh;
 }
 
-h1, h2, h3, .display {
+h1,
+h2,
+h3,
+.display {
   font-family: var(--font-display);
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
-a { color: inherit; text-decoration: none; }
-
-button, input, select, textarea {
+button,
+input,
+select,
+textarea {
   font: inherit;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }

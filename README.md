@@ -1,6 +1,6 @@
 # מספרת לידור — Booking App
 
-Hebrew RTL booking site for **מספרת לידור** (אבנר בן נר, אשדוד).  
+Hebrew RTL booking site for **מספרת לידור** (אבנר בן נר 1, אשדוד).  
 Stack: Next.js 15 App Router, Supabase Postgres (`postgres`.js), Cloudflare Workers via OpenNext, Resend email, SMS HTTP API.
 
 ## Features
@@ -72,7 +72,7 @@ See `open-next.config.ts` and `wrangler.toml`.
 |---|---|
 | Name | מספרת לידור |
 | Phone | 053-530-1669 (`+972535301669`) |
-| Address | אבנר בן נר, אשדוד, ישראל |
+| Address | אבנר בן נר 1, אשדוד, ישראל |
 
 ## Spec notes
 
