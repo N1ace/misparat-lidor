@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { getOrCreateDeviceId } from "@/lib/device-id";
+import { NAME_LIMITS } from "@/lib/name-limits";
 
 export type ClientInfo = {
   id: string;
@@ -157,7 +158,13 @@ export function ClientIdentityForm({
       <h2>{title}</h2>
       <label>
         <span>שם מלא</span>
-        <input required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+        <input
+          required
+          value={name}
+          maxLength={NAME_LIMITS.person}
+          onChange={(e) => setName(e.target.value.slice(0, NAME_LIMITS.person))}
+          autoComplete="name"
+        />
       </label>
       <label>
         <span>טלפון</span>

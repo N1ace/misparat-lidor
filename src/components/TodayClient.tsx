@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { formatInTimeZone } from "date-fns-tz";
 import { TimeSelect24 } from "@/components/TimeSelect24";
+import { NAME_LIMITS, truncateLabel } from "@/lib/name-limits";
 
 type Appt = {
   id: string;
@@ -147,7 +148,13 @@ export function TodayClient({
             ))}
           </select>
           <TimeSelect24 value={addTime} onChange={setAddTime} className="rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 w-full" />
-          <input value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="שם" className="w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
+          <input
+            value={addName}
+            maxLength={NAME_LIMITS.person}
+            onChange={(e) => setAddName(e.target.value.slice(0, NAME_LIMITS.person))}
+            placeholder="שם"
+            className="w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2"
+          />
           <input value={addPhone} onChange={(e) => setAddPhone(e.target.value)} placeholder="טלפון" className="w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
           <button type="button" onClick={addWalkIn} className="rounded-xl bg-[var(--accent)] px-4 py-2 font-bold text-[#1a0f0a]">
             שמור תור
@@ -170,8 +177,12 @@ export function TodayClient({
                       {time}
                       <span className="text-base font-medium text-[var(--muted)]">–{end}</span>
                     </p>
-                    <p className="mt-2 text-lg font-bold">{a.client_name}</p>
-                    <p className="text-[var(--muted)]">{a.service_name}</p>
+                    <p className="mt-2 text-lg font-bold truncate" title={a.client_name}>
+                      {truncateLabel(a.client_name, NAME_LIMITS.person)}
+                    </p>
+                    <p className="text-[var(--muted)] truncate" title={a.service_name}>
+                      {truncateLabel(a.service_name, NAME_LIMITS.service)}
+                    </p>
                     <a className="mt-1 inline-block text-[var(--accent)]" href={`tel:${a.client_phone}`}>
                       {a.client_phone}
                     </a>

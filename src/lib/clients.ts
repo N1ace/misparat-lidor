@@ -1,4 +1,5 @@
 import { getSql } from "./db";
+import { clampName, NAME_LIMITS } from "./name-limits";
 
 /** Upsert client by phone; returns client id. */
 export async function upsertClient(input: {
@@ -9,9 +10,10 @@ export async function upsertClient(input: {
 }): Promise<string> {
   const sql = getSql();
   const channel = input.notify_channel || "sms";
+  const name = clampName(input.name, NAME_LIMITS.person);
   const [row] = await sql<{ id: string }[]>`
     insert into clients (name, phone, email, notify_channel)
-    values (${input.name}, ${input.phone}, ${input.email ?? null}, ${channel})
+    values (${name}, ${input.phone}, ${input.email ?? null}, ${channel})
     on conflict (phone) do update set
       name = excluded.name,
       email = coalesce(excluded.email, clients.email),

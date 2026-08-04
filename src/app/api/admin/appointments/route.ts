@@ -4,10 +4,12 @@ import { autoCompletePastAppointments } from "@/lib/appointments-auto";
 import { getSql } from "@/lib/db";
 import { normalizePhoneIL, isValidEmail } from "@/lib/phone";
 import { smsConfirmation, smsReminder, emailConfirmation, emailReminder, smsReschedule, emailReschedule } from "@/lib/messages";
+import { clampName, NAME_LIMITS } from "@/lib/name-limits";
 import { formatJerusalem, wallTimeToUtc } from "@/lib/time";
 import { upsertClient, getClientByPhone } from "@/lib/clients";
 import { getShopSettings } from "@/lib/settings";
-import { isWithinWorkingHours } from "@/lib/hours";
+import { validateBookablePeriod } from "@/lib/availability";
+import { onSlotFreed } from "@/lib/waitlist";
 
 export const runtime = "nodejs";
 
@@ -25,7 +27,21 @@ export async function DELETE(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "חסר id" }, { status: 400 });
   const sql = getSql();
+  const [row] = await sql<{ start: Date; end: Date; status: string }[]>`
+    select lower(period) as start, upper(period) as end, status
+    from appointments where id = ${id}::uuid
+  `;
   await sql`delete from appointments where id = ${id}::uuid`;
+  if (row && (row.status === "confirmed" || row.status === "held")) {
+    try {
+      await onSlotFreed(
+        { start: new Date(row.start), end: new Date(row.end) },
+        { origin: req.nextUrl.origin },
+      );
+    } catch (e) {
+      console.error("[admin delete] waitlist", e);
+    }
+  }
   return NextResponse.json({ ok: true });
 }
 
@@ -48,6 +64,7 @@ export async function GET(req: NextRequest) {
     id: string;
     service_id: string | null;
     service_name: string;
+    service_color: string | null;
     client_name: string;
     client_phone: string;
     status: string;
@@ -55,12 +72,14 @@ export async function GET(req: NextRequest) {
     start: Date;
     end: Date;
   }[]>`
-    select id, service_id, service_name, client_name, client_phone, status, notes,
-           lower(period) as start, upper(period) as end
-    from appointments
-    where period && tstzrange(${from.toISOString()}::timestamptz, ${to.toISOString()}::timestamptz, '[)')
-      and status in ('confirmed','done','no_show')
-    order by lower(period)
+    select a.id, a.service_id, a.service_name, s.color as service_color,
+           a.client_name, a.client_phone, a.status, a.notes,
+           lower(a.period) as start, upper(a.period) as end
+    from appointments a
+    left join services s on s.id = a.service_id
+    where a.period && tstzrange(${from.toISOString()}::timestamptz, ${to.toISOString()}::timestamptz, '[)')
+      and a.status in ('confirmed','done','no_show','held')
+    order by lower(a.period)
   `;
 
   return NextResponse.json({
@@ -68,6 +87,7 @@ export async function GET(req: NextRequest) {
       id: r.id,
       service_id: r.service_id,
       service_name: r.service_name,
+      service_color: r.service_color,
       client_name: r.client_name,
       client_phone: r.client_phone,
       status: r.status,
@@ -143,10 +163,13 @@ export async function PATCH(req: NextRequest) {
   const phone = body.phone ? normalizePhoneIL(body.phone) : null;
   if (body.phone && !phone) return NextResponse.json({ error: "טלפון לא תקין" }, { status: 400 });
 
-  const name = body.name?.trim() || null;
+  const name = body.name ? clampName(body.name, NAME_LIMITS.person) || null : null;
   const status = body.status ?? null;
   const notesProvided = body.notes !== undefined;
-  const notesValue = body.notes ?? null;
+  const notesValue =
+    body.notes === undefined || body.notes == null
+      ? null
+      : clampName(body.notes, NAME_LIMITS.notes) || null;
 
   let start: Date | null = null;
   let end: Date | null = null;
@@ -162,20 +185,39 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (start && body.dateYmd && body.startTime && !body.forceOutsideHours) {
-    const inside = await isWithinWorkingHours({
-      dateYmd: body.dateYmd,
-      startTime: body.startTime,
+    const check = await validateBookablePeriod({
+      serviceId: serviceId || existing.service_id || "",
+      start,
       durationMinutes: duration,
+      bypassLead: true,
+      excludeAppointmentId: body.id,
+      forceOutsideHours: false,
     });
-    if (!inside) {
-      return NextResponse.json(
-        { error: OUTSIDE_HOURS_MSG, code: "outside_hours" },
-        { status: 409 },
-      );
+    if (!check.ok) {
+      if (check.code === "outside_hours") {
+        return NextResponse.json(
+          { error: OUTSIDE_HOURS_MSG, code: "outside_hours" },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json({ error: check.reason, code: check.code }, { status: 409 });
+    }
+  } else if (start && body.dateYmd && body.startTime && body.forceOutsideHours) {
+    const check = await validateBookablePeriod({
+      serviceId: serviceId || existing.service_id || "",
+      start,
+      durationMinutes: duration,
+      bypassLead: true,
+      excludeAppointmentId: body.id,
+      forceOutsideHours: true,
+    });
+    if (!check.ok && check.code === "overlap") {
+      return NextResponse.json({ error: check.reason, code: check.code }, { status: 409 });
     }
   }
 
   try {
+    const previousStatus = existing.status;
     if (start && end) {
       await sql`
         update appointments set
@@ -201,6 +243,27 @@ export async function PATCH(req: NextRequest) {
           status = coalesce(${status}, status)
         where id = ${body.id}::uuid
       `;
+    }
+
+    if (
+      status &&
+      (status === "cancelled" || status === "no_show") &&
+      previousStatus === "confirmed"
+    ) {
+      try {
+        const [period] = await sql<{ start: Date; end: Date }[]>`
+          select lower(period) as start, upper(period) as end
+          from appointments where id = ${body.id}::uuid
+        `;
+        if (period) {
+          await onSlotFreed(
+            { start: new Date(period.start), end: new Date(period.end) },
+            { origin: req.nextUrl.origin },
+          );
+        }
+      } catch (e) {
+        console.error("[admin patch] waitlist", e);
+      }
     }
 
     const finalPhone = phone || existing.client_phone;
@@ -285,12 +348,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "חסרים שדות" }, { status: 400 });
   }
 
+  const clientName = clampName(body.name, NAME_LIMITS.person);
+  if (!clientName) return NextResponse.json({ error: "חסרים שדות" }, { status: 400 });
+
   const phone = normalizePhoneIL(body.phone);
   if (!phone) return NextResponse.json({ error: "טלפון לא תקין" }, { status: 400 });
   const email = body.email?.trim() ? body.email.trim().toLowerCase() : null;
   if (email && !isValidEmail(email)) {
     return NextResponse.json({ error: "אימייל לא תקין" }, { status: 400 });
   }
+  const notes = body.notes?.trim() ? clampName(body.notes, NAME_LIMITS.notes) : null;
 
   const settings = await getShopSettings();
   const sql = getSql();
@@ -311,18 +378,34 @@ export async function POST(req: NextRequest) {
   const end = new Date(start.getTime() + service.duration_minutes * 60_000);
 
   const dateYmd = body.dateYmd || formatJerusalem(start, "yyyy-MM-dd");
-  const startTime = body.startTime || formatJerusalem(start, "HH:mm");
+  void dateYmd;
+
   if (!body.forceOutsideHours) {
-    const inside = await isWithinWorkingHours({
-      dateYmd,
-      startTime,
+    const check = await validateBookablePeriod({
+      serviceId: service.id,
+      start,
       durationMinutes: service.duration_minutes,
+      bypassLead: true,
     });
-    if (!inside) {
-      return NextResponse.json(
-        { error: OUTSIDE_HOURS_MSG, code: "outside_hours" },
-        { status: 409 },
-      );
+    if (!check.ok) {
+      if (check.code === "outside_hours") {
+        return NextResponse.json(
+          { error: OUTSIDE_HOURS_MSG, code: "outside_hours" },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json({ error: check.reason, code: check.code }, { status: 409 });
+    }
+  } else {
+    const check = await validateBookablePeriod({
+      serviceId: service.id,
+      start,
+      durationMinutes: service.duration_minutes,
+      bypassLead: true,
+      forceOutsideHours: true,
+    });
+    if (!check.ok && check.code === "overlap") {
+      return NextResponse.json({ error: check.reason, code: check.code }, { status: 409 });
     }
   }
 
@@ -342,9 +425,6 @@ export async function POST(req: NextRequest) {
     start.getTime() - settings.reminder_hours_before * 60 * 60 * 1000,
   );
   const reminderSend = reminderAt < new Date() ? new Date() : reminderAt;
-
-  const clientName = body.name;
-  const notes = body.notes ?? null;
 
   const smsConfirm = smsConfirmation({ name: clientName, service: service.name, startAt: start });
   const smsRem = smsReminder({ time: formatJerusalem(start, "HH:mm") });

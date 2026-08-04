@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { formatInTimeZone } from "date-fns-tz";
 import { TZ } from "@/lib/shop";
+import { NAME_LIMITS, truncateLabel } from "@/lib/name-limits";
 
 type Stats = {
   todayYmd: string;
@@ -145,9 +146,13 @@ export function AdminDashboard() {
             <h2>התור הבא</h2>
             {stats.next ? (
               <p>
-                <strong>{stats.next.client_name}</strong>
+                <strong title={stats.next.client_name}>
+                  {truncateLabel(stats.next.client_name, NAME_LIMITS.person)}
+                </strong>
                 {" · "}
-                {stats.next.service_name}
+                <span title={stats.next.service_name}>
+                  {truncateLabel(stats.next.service_name, NAME_LIMITS.service)}
+                </span>
                 {" · "}
                 <bdi>
                   {formatInTimeZone(stats.next.start, TZ, "dd/MM/yyyy HH:mm")}

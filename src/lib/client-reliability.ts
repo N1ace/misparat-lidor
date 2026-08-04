@@ -14,6 +14,7 @@ export type ReliabilityStat = {
   total_bookings: number;
   is_repeat_no_show: boolean;
   tooltip: string;
+  last_booking_at: string | null;
 };
 
 const SCORE_GREEN_MIN = 85;
@@ -30,15 +31,20 @@ function damageFor(status: ApptStatus): number | null {
 }
 
 export function computeReliability(
-  appointments: { status: string }[],
+  appointments: { status: string; start?: string | Date | null }[],
 ): ReliabilityStat {
   let completed = 0;
   let cancelled = 0;
   let no_show = 0;
   let confirmed = 0;
   const damages: number[] = [];
+  let lastMs = -Infinity;
 
   for (const a of appointments) {
+    if (a.start) {
+      const t = new Date(a.start).getTime();
+      if (Number.isFinite(t) && t > lastMs) lastMs = t;
+    }
     if (a.status === "done") {
       completed += 1;
       damages.push(0);
@@ -53,6 +59,7 @@ export function computeReliability(
     }
   }
 
+  const last_booking_at = lastMs > -Infinity ? new Date(lastMs).toISOString() : null;
   const history_count = damages.length;
   const total_bookings = appointments.length;
   const is_repeat_no_show = no_show >= REPEAT_NO_SHOW_MIN;
@@ -71,6 +78,7 @@ export function computeReliability(
       total_bookings,
       is_repeat_no_show,
       tooltip,
+      last_booking_at,
     };
   }
 
@@ -100,6 +108,7 @@ export function computeReliability(
     total_bookings,
     is_repeat_no_show,
     tooltip: `ציון אמינות ${score}%: ${parts.join(" · ")}`,
+    last_booking_at,
   };
 }
 

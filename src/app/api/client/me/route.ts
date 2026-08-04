@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { isValidEmail } from "@/lib/phone";
 import { clearClientSessionCookie, createClientToken, readClientSession, setClientSessionCookie } from "@/lib/client-auth";
+import { clampName, NAME_LIMITS } from "@/lib/name-limits";
 
 export const runtime = "nodejs";
 
@@ -52,7 +53,8 @@ export async function PATCH(req: NextRequest) {
   }
 
   const sql = getSql();
-  const nameProvided = !!body.name?.trim();
+  const clampedName = body.name ? clampName(body.name, NAME_LIMITS.person) : "";
+  const nameProvided = !!clampedName;
   const emailProvided = body.email !== undefined;
   const channelProvided = !!body.notify_channel;
 
@@ -64,7 +66,7 @@ export async function PATCH(req: NextRequest) {
     notify_channel: string;
   }[]>`
     update clients set
-      name = case when ${nameProvided} then ${body.name?.trim() || null} else name end,
+      name = case when ${nameProvided} then ${clampedName || null} else name end,
       email = case when ${emailProvided} then ${email ?? null} else email end,
       notify_channel = case when ${channelProvided} then ${body.notify_channel || null} else notify_channel end,
       updated_at = now()

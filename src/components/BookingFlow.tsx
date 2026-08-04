@@ -11,6 +11,8 @@ import {
   googleCalendarUrl,
 } from "@/lib/calendar-links";
 import { SHOP } from "@/lib/shop";
+import { NAME_LIMITS, truncateLabel } from "@/lib/name-limits";
+import { formatJerusalem } from "@/lib/time";
 
 export type BookingService = {
   id: string;
@@ -94,12 +96,14 @@ export function BookingFlow({
   services,
   initialService,
   horizonDays = 30,
-  embedded = false,
+  onOpenBookings,
+  onBooked,
 }: {
   services: BookingService[];
   initialService?: string;
   horizonDays?: number;
-  embedded?: boolean;
+  onOpenBookings?: () => void;
+  onBooked?: () => void;
 }) {
   const preselected = resolveInitialService(services, initialService);
   const [step, setStep] = useState(preselected ? 2 : 1);
@@ -122,6 +126,8 @@ export function BookingFlow({
   const [copied, setCopied] = useState(false);
   /** True when step 4 was reached by skipping identity (already logged in). */
   const [skippedIdentity, setSkippedIdentity] = useState(false);
+  const [waitlistBusy, setWaitlistBusy] = useState(false);
+  const [waitlistMsg, setWaitlistMsg] = useState<string | null>(null);
 
   const service = services.find((s) => s.id === serviceId);
   const todayYmd = ymdInTz(new Date());
@@ -150,39 +156,49 @@ export function BookingFlow({
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetch("/api/hours"), fetch("/api/closures")])
-      .then(async ([hoursRes, closuresRes]) => {
-        const data = await hoursRes.json().catch(() => null);
-        const closuresData = await closuresRes.json().catch(() => null);
-        if (cancelled) return;
-        const byDay = data?.byDay as Record<string, unknown[]> | undefined;
-        if (!byDay) {
-          setOpenDays(new Set([0, 1, 2, 3, 4, 5]));
-        } else {
-          const open = new Set<number>();
-          for (let d = 0; d <= 6; d++) {
-            if (Array.isArray(byDay[d]) && byDay[d].length > 0) open.add(d);
+    const loadHours = () => {
+      Promise.all([fetch("/api/hours"), fetch("/api/closures")])
+        .then(async ([hoursRes, closuresRes]) => {
+          const data = await hoursRes.json().catch(() => null);
+          const closuresData = await closuresRes.json().catch(() => null);
+          if (cancelled) return;
+          const byDay = data?.byDay as Record<string, unknown[]> | undefined;
+          if (!byDay) {
+            setOpenDays(new Set([0, 1, 2, 3, 4, 5]));
+          } else {
+            const open = new Set<number>();
+            for (let d = 0; d <= 6; d++) {
+              if (Array.isArray(byDay[d]) && byDay[d].length > 0) open.add(d);
+            }
+            setOpenDays(open);
           }
-          setOpenDays(open);
-        }
-        const closed = new Set<string>();
-        for (const c of closuresData?.closures || []) {
-          if (!c.all_day) continue;
-          const start = formatInTimeZone(c.start, "Asia/Jerusalem", "yyyy-MM-dd");
-          const end = formatInTimeZone(c.end, "Asia/Jerusalem", "yyyy-MM-dd");
-          let cur = start;
-          while (cur <= end) {
-            closed.add(cur);
-            const [y, m, d] = cur.split("-").map(Number);
-            const next = new Date(y, m - 1, d + 1);
-            cur = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+          const closed = new Set<string>();
+          for (const c of closuresData?.closures || []) {
+            if (!c.all_day) continue;
+            const start = formatInTimeZone(c.start, "Asia/Jerusalem", "yyyy-MM-dd");
+            const end = formatInTimeZone(c.end, "Asia/Jerusalem", "yyyy-MM-dd");
+            let cur = start;
+            while (cur <= end) {
+              closed.add(cur);
+              const [y, m, d] = cur.split("-").map(Number);
+              const next = new Date(y, m - 1, d + 1);
+              cur = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+            }
           }
-        }
-        setClosedYmds(closed);
-      })
-      .catch(() => setOpenDays(new Set([0, 1, 2, 3, 4, 5])));
+          setClosedYmds(closed);
+        })
+        .catch(() => setOpenDays(new Set([0, 1, 2, 3, 4, 5])));
+    };
+    loadHours();
+    const onVis = () => {
+      if (document.visibilityState === "visible") loadHours();
+    };
+    window.addEventListener("focus", loadHours);
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", loadHours);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
 
@@ -259,6 +275,7 @@ export function BookingFlow({
       }
       setBooked(data.appointment as BookedAppt);
       setStep(5);
+      onBooked?.();
     } catch {
       setError("שגיאת רשת");
     } finally {
@@ -266,10 +283,45 @@ export function BookingFlow({
     }
   }
 
+  async function joinWaitlist() {
+    if (!serviceId || !date) return;
+    if (!client) {
+      setError("יש להתחבר לפני הצטרפות לרשימת המתנה");
+      setStep(3);
+      return;
+    }
+    setWaitlistBusy(true);
+    setWaitlistMsg(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceId,
+          targetDate: date,
+          anyTime: true,
+          name: client.name,
+          phone: client.phone,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "לא ניתן להירשם לרשימת ההמתנה");
+        return;
+      }
+      setWaitlistMsg("נרשמתם לרשימת ההמתנה — נעדכן אם יתפנה תור");
+    } catch {
+      setError("שגיאת רשת");
+    } finally {
+      setWaitlistBusy(false);
+    }
+  }
+
   const whenLabel = booked
-    ? formatInTimeZone(booked.start, "Asia/Jerusalem", "EEEE d/M/yyyy · HH:mm")
+    ? formatJerusalem(booked.start, "EEEE d/M/yyyy · HH:mm")
     : slot
-      ? formatInTimeZone(slot, "Asia/Jerusalem", "EEEE d/M/yyyy · HH:mm")
+      ? formatJerusalem(slot, "EEEE d/M/yyyy · HH:mm")
       : "";
 
   const cells = daysInMonthGrid(monthCursor);
@@ -345,13 +397,17 @@ export function BookingFlow({
             {copied ? "הועתק ✓" : "העתק פרטי התור"}
           </button>
         </div>
-        {!embedded && (
-          <p style={{ marginBlockStart: "1.25rem" }}>
-            <Link href="/account?tab=bookings" className="bf-account-link">
-              לאזור האישי
+        <p style={{ marginBlockStart: "1.25rem" }}>
+          {onOpenBookings ? (
+            <button type="button" className="bf-account-link bf-link-btn" onClick={onOpenBookings}>
+              לתורים שלי
+            </button>
+          ) : (
+            <Link href="/booking?tab=bookings" className="bf-account-link">
+              לתורים שלי
             </Link>
-          </p>
-        )}
+          )}
+        </p>
       </div>
     );
   }
@@ -400,7 +456,7 @@ export function BookingFlow({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={s.image_path || PLACEHOLDER} alt="" />
                 <div className="bf-svc-meta">
-                  <strong>{s.name}</strong>
+                  <strong title={s.name}>{truncateLabel(s.name, NAME_LIMITS.service)}</strong>
                   <span>
                     {s.duration_minutes} דק׳ · {priceILS(s.price_agorot)}
                   </span>
@@ -472,7 +528,19 @@ export function BookingFlow({
               {loadingSlots ? (
                 <p className="bf-muted">טוען תורים…</p>
               ) : slots.length === 0 ? (
-                <p className="bf-muted">אין תורים פנויים ביום הזה — בחרו יום אחר</p>
+                <div className="bf-waitlist-cta">
+                  <p className="bf-muted">אין תורים פנויים ביום הזה</p>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ width: "100%", marginBlockStart: "0.75rem" }}
+                    onClick={() => void joinWaitlist()}
+                    disabled={waitlistBusy}
+                  >
+                    {waitlistBusy ? "נרשם…" : "הצטרפות לרשימת המתנה ליום זה"}
+                  </button>
+                  {waitlistMsg ? <p className="account-ok">{waitlistMsg}</p> : null}
+                </div>
               ) : (
                 <div className="slot-grid">
                   {slots.map((iso) => {

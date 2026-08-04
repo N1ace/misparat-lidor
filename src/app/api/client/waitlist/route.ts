@@ -10,8 +10,8 @@ export async function GET() {
 
   const sql = getSql();
   const entries = await sql`
-    select w.id, w.client_name, w.client_phone, w.preferred_date, w.notes, w.status, w.created_at,
-           s.name as service_name
+    select w.id, w.client_name, w.client_phone, w.target_date as preferred_date,
+           w.status, w.created_at, w.any_time, s.name as service_name
     from waitlist_entries w
     left join services s on s.id = w.service_id
     where w.client_phone = ${session.phone}

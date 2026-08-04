@@ -11,8 +11,9 @@ async function loadServices() {
       name: string;
       duration_minutes: number;
       price_agorot: number;
+      color: string | null;
     }[]>`
-      select id, name, duration_minutes, price_agorot
+      select id, name, duration_minutes, price_agorot, color
       from services where active = true
       order by sort_order, name
     `;

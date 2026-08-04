@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { compressImageFile } from "@/lib/compress-image";
+import { NAME_LIMITS, truncateLabel } from "@/lib/name-limits";
+import {
+  SERVICE_COLORS,
+  normalizeServiceColor,
+  pickServiceColor,
+} from "@/lib/service-colors";
 
 type Service = {
   id: string;
@@ -10,6 +17,7 @@ type Service = {
   sort_order: number;
   active: boolean;
   image_path: string | null;
+  color: string | null;
 };
 
 const emptyForm = {
@@ -19,14 +27,15 @@ const emptyForm = {
   sort_order: 0,
   active: true,
   image_path: "",
+  color: SERVICE_COLORS[0] as string,
 };
 
 const PLACEHOLDER =
   "data:image/svg+xml," +
   encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
-      <rect width="640" height="400" fill="#eef1f4"/>
-      <text x="320" y="210" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="28">אין תמונה</text>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="112" height="112" viewBox="0 0 112 112">
+      <rect width="112" height="112" rx="12" fill="#eef1f4"/>
+      <text x="56" y="62" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="11">אין תמונה</text>
     </svg>`,
   );
 
@@ -34,14 +43,74 @@ function priceILS(agorot: number) {
   return `₪${(agorot / 100).toFixed(agorot % 100 === 0 ? 0 : 2)}`;
 }
 
+function IconEyeOff({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9.3 3.1 11 7.5a11.7 11.7 0 01-4.2 5.1M6.1 6.1A11.6 11.6 0 001 12.5C2.7 16.9 7 20 12 20c1.7 0 3.3-.4 4.7-1"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconEye({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M1 12.5C2.7 8.1 7 5 12 5s9.3 3.1 11 7.5C21.3 16.9 17 20 12 20S2.7 16.9 1 12.5z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12.5" r="3" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function IconPencil({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconTrash({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 6h18M8 6V4h8v2m-1 0v14a2 2 0 01-2 2H9a2 2 0 01-2-2V6h10z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function AdminServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
+  const [q, setQ] = useState("");
   const [modal, setModal] = useState<"add" | "edit" | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [localPreview, setLocalPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/services");
@@ -62,9 +131,20 @@ export default function AdminServicesPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [modal]);
 
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return services;
+    return services.filter((s) => s.name.toLowerCase().includes(needle));
+  }, [services, q]);
+
   function openAdd() {
     setEditId(null);
-    setForm(emptyForm);
+    setForm({
+      ...emptyForm,
+      color: pickServiceColor(services.length),
+      sort_order: services.length,
+    });
+    setLocalPreview(null);
     setError(null);
     setModal("add");
   }
@@ -78,9 +158,76 @@ export default function AdminServicesPage() {
       sort_order: s.sort_order,
       active: s.active,
       image_path: s.image_path || "",
+      color: normalizeServiceColor(s.color),
     });
+    setLocalPreview(null);
     setError(null);
     setModal("edit");
+  }
+
+  async function onPickImage(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("פורמט לא נתמך. השתמשו ב-JPG, PNG או WEBP.");
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    let previewObjectUrl: string | null = null;
+    try {
+      let picked = file;
+      try {
+        picked = await compressImageFile(file);
+      } catch {
+        picked = file;
+      }
+      if (picked.size > 5 * 1024 * 1024) {
+        setError("הקובץ גדול מדי. עד 5 מגה.");
+        return;
+      }
+      previewObjectUrl = URL.createObjectURL(picked);
+      setLocalPreview(previewObjectUrl);
+
+      const body = new FormData();
+      body.append("file", picked);
+      const res = await fetch("/api/admin/upload", { method: "POST", body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "העלאה נכשלה");
+        setLocalPreview(null);
+        return;
+      }
+      setForm((f) => ({ ...f, image_path: data.url as string }));
+      setLocalPreview(null);
+    } catch {
+      setError("שגיאת רשת בהעלאה");
+      setLocalPreview(null);
+    } finally {
+      if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function clearImage() {
+    setForm((f) => ({ ...f, image_path: "" }));
+    setLocalPreview(null);
+  }
+
+  async function toggleActive(s: Service) {
+    setMsg(null);
+    const res = await fetch("/api/admin/services", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: s.id, active: !s.active }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setMsg(data.error || "שגיאה בעדכון");
+      return;
+    }
+    setMsg(s.active ? "השירות הושבת" : "השירות הופעל");
+    await load();
   }
 
   async function submitModal(e: React.FormEvent) {
@@ -100,6 +247,7 @@ export default function AdminServicesPage() {
         sort_order: Number(form.sort_order) || 0,
         active: form.active,
         image_path: form.image_path.trim() || null,
+        color: form.color,
       };
       if (modal === "add") {
         const res = await fetch("/api/admin/services", {
@@ -124,7 +272,7 @@ export default function AdminServicesPage() {
           setError(data.error || "שגיאה");
           return;
         }
-        setMsg("נשמר — המחירון באתר ובקביעת תור מתעדכן מיד");
+        setMsg("נשמר — המחירון והיומן מתעדכנים מיד");
       }
       setModal(null);
       await load();
@@ -153,8 +301,8 @@ export default function AdminServicesPage() {
     <div>
       <div className="admin-page-head">
         <div>
-          <h1>שירותים</h1>
-          <p>כרטיסי שירות עם תמונה — שינויים מתעדכנים במחירון ובקביעת תור.</p>
+          <h1>סוגי שירות</h1>
+          <p>ניהול שירותים, מחירים, תמונות וצבע ביומן.</p>
         </div>
         <button type="button" className="admin-btn-primary" onClick={openAdd}>
           + שירות חדש
@@ -162,31 +310,72 @@ export default function AdminServicesPage() {
       </div>
       {msg ? <p className="admin-ok">{msg}</p> : null}
 
-      <div className="admin-entity-grid">
-        {services.map((s) => (
-          <article key={s.id} className={`admin-entity-card admin-svc-card${!s.active ? " inactive" : ""}`}>
-            <button type="button" className="admin-svc-preview" onClick={() => openEdit(s)}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={s.image_path || PLACEHOLDER} alt="" />
-              <div className="admin-svc-preview-meta">
-                <strong>{s.name}</strong>
-                <span>
-                  {s.duration_minutes} דק׳ · {priceILS(s.price_agorot)}
-                  {!s.active ? " · לא פעיל" : ""}
-                </span>
+      <div className="admin-search admin-card" style={{ marginBottom: "1rem" }}>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="חיפוש לפי שם"
+          aria-label="חיפוש לפי שם"
+        />
+      </div>
+
+      <div className="admin-svc-list">
+        {filtered.map((s, idx) => {
+          const color = normalizeServiceColor(s.color, idx);
+          return (
+            <article
+              key={s.id}
+              className={`admin-svc-row${!s.active ? " inactive" : ""}`}
+            >
+              <div className="admin-svc-row-stripe" style={{ backgroundColor: color }} aria-hidden />
+              <button type="button" className="admin-svc-row-main" onClick={() => openEdit(s)}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={s.image_path || PLACEHOLDER} alt="" className="admin-svc-row-thumb" />
+                <div className="admin-svc-row-meta">
+                  <div className="admin-svc-row-title">
+                    <strong title={s.name}>{truncateLabel(s.name, NAME_LIMITS.service)}</strong>
+                    {!s.active ? <span className="admin-svc-badge">מושבת</span> : null}
+                  </div>
+                  <span>
+                    {s.duration_minutes} דק׳ · {priceILS(s.price_agorot)}
+                  </span>
+                </div>
+              </button>
+              <div className="admin-svc-row-actions">
+                <button
+                  type="button"
+                  className="admin-icon-btn"
+                  title={s.active ? "השבתה" : "הפעלה"}
+                  aria-label={s.active ? "השבתה" : "הפעלה"}
+                  onClick={() => void toggleActive(s)}
+                >
+                  {s.active ? <IconEyeOff /> : <IconEye />}
+                </button>
+                <button
+                  type="button"
+                  className="admin-icon-btn"
+                  title="עריכה"
+                  aria-label="עריכה"
+                  onClick={() => openEdit(s)}
+                >
+                  <IconPencil />
+                </button>
+                <button
+                  type="button"
+                  className="admin-icon-btn danger"
+                  title="מחיקה"
+                  aria-label="מחיקה"
+                  onClick={() => void remove(s)}
+                >
+                  <IconTrash />
+                </button>
               </div>
-            </button>
-            <div className="admin-entity-actions">
-              <button type="button" className="cal-chip" onClick={() => openEdit(s)}>
-                עריכה
-              </button>
-              <button type="button" className="admin-danger-link" onClick={() => void remove(s)}>
-                מחק
-              </button>
-            </div>
-          </article>
-        ))}
-        {!services.length ? <p className="admin-muted">אין שירותים</p> : null}
+            </article>
+          );
+        })}
+        {!filtered.length ? (
+          <p className="admin-muted">{q.trim() ? "אין תוצאות" : "אין שירותים"}</p>
+        ) : null}
       </div>
 
       {modal ? (
@@ -207,18 +396,73 @@ export default function AdminServicesPage() {
               </button>
             </div>
             <div className="cal-modal-body">
-              <div className="admin-svc-modal-preview">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={form.image_path.trim() || PLACEHOLDER} alt="" />
+              <div className="admin-svc-upload">
+                <div className="admin-svc-modal-preview">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={localPreview || form.image_path.trim() || PLACEHOLDER}
+                    alt=""
+                  />
+                  {uploading ? <div className="admin-svc-upload-busy">מעלה…</div> : null}
+                </div>
+                <div className="admin-svc-upload-actions">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="sr-only"
+                    id="svc-image-upload"
+                    disabled={uploading || saving}
+                    onChange={(e) => void onPickImage(e.target.files?.[0] ?? null)}
+                  />
+                  <label
+                    htmlFor="svc-image-upload"
+                    className={`admin-btn-primary admin-upload-btn${uploading || saving ? " is-disabled" : ""}`}
+                  >
+                    {uploading ? "מעלה…" : form.image_path ? "החלפת תמונה" : "העלאת תמונה מהמכשיר"}
+                  </label>
+                  {form.image_path || localPreview ? (
+                    <button
+                      type="button"
+                      className="cal-chip"
+                      disabled={uploading || saving}
+                      onClick={clearImage}
+                    >
+                      הסרת תמונה
+                    </button>
+                  ) : null}
+                  <p className="admin-muted admin-upload-hint">
+                    JPG / PNG / WEBP · עד 5 מגה · מהגלריה או מהמצלמה
+                  </p>
+                </div>
               </div>
               <label>
                 <span>שם</span>
                 <input
                   required
                   value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  maxLength={NAME_LIMITS.service}
+                  onChange={(e) =>
+                    setForm({ ...form, name: e.target.value.slice(0, NAME_LIMITS.service) })
+                  }
                 />
               </label>
+              <div>
+                <span className="admin-field-label">צבע לזיהוי ביומן</span>
+                <div className="admin-color-swatches" role="group" aria-label="בחירת צבע">
+                  {SERVICE_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      className={`admin-color-swatch${form.color === c ? " on" : ""}`}
+                      style={{ backgroundColor: c }}
+                      aria-label={`צבע ${c}`}
+                      aria-pressed={form.color === c}
+                      onClick={() => setForm({ ...form, color: c })}
+                    />
+                  ))}
+                </div>
+              </div>
               <div className="admin-row">
                 <label>
                   <span>דקות</span>
@@ -250,15 +494,6 @@ export default function AdminServicesPage() {
                   onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })}
                 />
               </label>
-              <label>
-                <span>נתיב תמונה (למשל /media/gallery-01.jpg)</span>
-                <input
-                  dir="ltr"
-                  placeholder="/media/gallery-01.jpg"
-                  value={form.image_path}
-                  onChange={(e) => setForm({ ...form, image_path: e.target.value })}
-                />
-              </label>
               <label className="admin-check">
                 <input
                   type="checkbox"
@@ -284,8 +519,8 @@ export default function AdminServicesPage() {
               ) : (
                 <span />
               )}
-              <button type="submit" className="admin-btn-primary" disabled={saving}>
-                {saving ? "שומר…" : modal === "add" ? "הוסף שירות" : "שמור שינויים"}
+              <button type="submit" className="admin-btn-primary" disabled={saving || uploading}>
+                {saving ? "שומר…" : uploading ? "מעלה תמונה…" : modal === "add" ? "הוסף שירות" : "שמור שינויים"}
               </button>
             </div>
           </form>

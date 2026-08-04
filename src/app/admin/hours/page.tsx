@@ -170,9 +170,6 @@ export default function AdminHoursPage() {
             כרטיס לכל יום — פתיחה להגדרות. השעות בפורמט 24 שעות ומתעדכנות באתר ובקביעת תור.
           </p>
         </div>
-        <button type="button" className="admin-btn-primary" disabled={saving} onClick={() => void save()}>
-          {saving ? "שומר…" : "שמור שעות"}
-        </button>
       </div>
 
       {msg ? <p className="admin-ok">{msg}</p> : null}
@@ -226,7 +223,6 @@ export default function AdminHoursPage() {
                           <span>סגירה</span>
                           <TimeSelect24 value={day.close} onChange={(v) => patchDay(d, { close: v })} />
                         </label>
-                        <span />
                       </div>
 
                       <label className="admin-check">
@@ -258,7 +254,6 @@ export default function AdminHoursPage() {
                                 onChange={(v) => patchDay(d, { breakEnd: v })}
                               />
                             </label>
-                            <span />
                           </div>
                         </div>
                       ) : null}
@@ -273,12 +268,12 @@ export default function AdminHoursPage() {
             </article>
           );
         })}
-      </div>
 
-      <div style={{ marginTop: "1rem" }}>
-        <button type="button" className="admin-btn-primary" disabled={saving} onClick={() => void save()}>
-          {saving ? "שומר…" : "שמור שעות"}
-        </button>
+        <div className="admin-hours-save-row">
+          <button type="button" className="admin-btn-primary" disabled={saving} onClick={() => void save()}>
+            {saving ? "שומר…" : "שמור שעות"}
+          </button>
+        </div>
       </div>
     </div>
   );

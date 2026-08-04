@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { normalizePhoneIL } from "@/lib/phone";
 import { getClientByPhone, namesMatch } from "@/lib/clients";
 import { findClientByDevice, issueClientSession } from "@/lib/client-auth";
+import { clampName, NAME_LIMITS } from "@/lib/name-limits";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -22,7 +23,8 @@ export async function POST(req: NextRequest) {
   }
   const phone = normalizePhoneIL(body.phone);
   if (!phone) return NextResponse.json({ error: "טלפון לא תקין" }, { status: 400 });
-  const name = body.name.trim();
+  const name = clampName(body.name, NAME_LIMITS.person);
+  if (!name) return NextResponse.json({ error: "שם וטלפון חובה" }, { status: 400 });
 
   if (body.deviceId) {
     const byDevice = await findClientByDevice(body.deviceId, phone);

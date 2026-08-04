@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { NAME_LIMITS, truncateLabel } from "@/lib/name-limits";
 
 type Service = { id: string; name: string };
 
@@ -10,9 +11,11 @@ type Entry = {
   client_phone: string;
   service_id: string | null;
   service_name: string | null;
-  preferred_date: string | null;
-  notes: string | null;
+  target_date: string | null;
+  any_time?: boolean;
+  windows?: { start: string; end: string }[];
   status: string;
+  seq?: number;
   created_at: string;
 };
 
@@ -68,22 +71,6 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
     setModal(true);
   }
 
-  async function toggleEnabled() {
-    setMsg(null);
-    const next = !enabled;
-    const res = await fetch("/api/admin/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ waitlist_enabled: next }),
-    });
-    if (!res.ok) {
-      setError("לא ניתן לעדכן את ההגדרה");
-      return;
-    }
-    setEnabled(next);
-    setMsg(next ? "רשימת ההמתנה הופעלה" : "רשימת ההמתנה כובתה");
-  }
-
   async function add(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -96,8 +83,9 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
         body: JSON.stringify({
           client_name: form.name,
           client_phone: form.phone,
-          service_id: form.serviceId || undefined,
-          preferred_date: form.preferredDate || undefined,
+          service_id: form.serviceId,
+          target_date: form.preferredDate,
+          any_time: true,
           notes: form.notes || undefined,
         }),
       });
@@ -116,16 +104,6 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
     }
   }
 
-  async function setStatus(id: string, status: string) {
-    setError(null);
-    await fetch("/api/admin/waitlist", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status }),
-    });
-    await load();
-  }
-
   async function remove(entry: Entry) {
     if (!confirm(`להסיר את ${entry.client_name} מרשימת ההמתנה?`)) return;
     setError(null);
@@ -140,65 +118,106 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
     await load();
   }
 
+  async function manualOffer(entry: Entry) {
+    const raw = prompt("שעת הצעה (HH:MM) בתאריך היעד — למשל 17:00");
+    if (!raw) return;
+    const hm = raw.trim();
+    if (!/^\d{1,2}:\d{2}$/.test(hm) || !entry.target_date) {
+      setError("שעה או תאריך לא תקינים");
+      return;
+    }
+    const [h, m] = hm.split(":").map(Number);
+    const start = new Date(`${entry.target_date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`);
+    // Interpret as Jerusalem wall time via ISO offset approximation: send ISO from local construction
+    // Better: send as Jerusalem ISO using noon-relative — API expects Date that validates.
+    const isoGuess = `${entry.target_date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+03:00`;
+    setError(null);
+    const res = await fetch("/api/admin/waitlist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: entry.id, offer_start: isoGuess }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(data.error || "הצעה נכשלה");
+      return;
+    }
+    setMsg("הצעה נשלחה");
+    void start;
+    await load();
+  }
+
   return (
     <div>
       <div className="admin-page-head">
         <div>
           <h1>רשימת המתנה</h1>
-          <p>כרטיסי ממתינים — הוספה והסרה של לקוחות שמחכים לתור פנוי.</p>
+          <p>FIFO אוטומטי כשמתפנה תור · הצעה ידנית ללקוח ספציפי.</p>
         </div>
-        <div className="admin-page-head-actions">
-          <button type="button" className="cal-chip" onClick={() => void toggleEnabled()}>
-            {enabled ? "כבה רשימה" : "הפעל רשימה"}
-          </button>
+        {enabled ? (
           <button type="button" className="admin-btn-primary" onClick={openAdd}>
             + הוסף לרשימה
           </button>
-        </div>
+        ) : null}
       </div>
 
       {!enabled ? (
-        <p className="cal-error" style={{ color: "var(--admin-muted)" }}>
-          הרשימה כבויה להצגה ציבורית — עדיין אפשר להוסיף ולהסיר ממנה כאן.
-        </p>
+        <div className="admin-card admin-form">
+          <p className="admin-hint" style={{ marginTop: 0 }}>
+            רשימת ההמתנה כבויה. אפשר להפעיל אותה מחדש ב־
+            <a href="/admin/settings?tab=booking">כללי הזמנה</a>.
+          </p>
+        </div>
       ) : null}
       {msg ? <p className="admin-ok">{msg}</p> : null}
       {error && !modal ? <p className="cal-error">{error}</p> : null}
 
-      <div className="admin-entity-grid">
-        {entries.map((e) => (
-          <article key={e.id} className="admin-entity-card">
-            <div className="admin-entity-main" style={{ cursor: "default" }}>
-              <strong>{e.client_name}</strong>
-              <span className="admin-entity-meta" dir="ltr">
-                {e.client_phone}
-              </span>
-              {e.service_name ? <span className="admin-entity-meta">{e.service_name}</span> : null}
-              {e.preferred_date ? (
-                <span className="admin-entity-meta">מועדף: {formatPreferredDate(e.preferred_date)}</span>
-              ) : null}
-              {e.notes ? <span className="admin-entity-notes">{e.notes}</span> : null}
-              <span className="admin-badge">{e.status === "waiting" ? "ממתין" : "הוצע תור"}</span>
-            </div>
-            <div className="admin-entity-actions admin-entity-actions-wrap">
-              {e.status === "waiting" ? (
-                <button type="button" className="cal-chip" onClick={() => void setStatus(e.id, "offered")}>
-                  סומן כהוצע
+      {enabled ? (
+        <div className="admin-entity-grid">
+          {entries.map((e) => (
+            <article key={e.id} className="admin-entity-card">
+              <div className="admin-entity-main" style={{ cursor: "default" }}>
+                <strong title={e.client_name}>
+                  {truncateLabel(e.client_name, NAME_LIMITS.person)}
+                </strong>
+                <span className="admin-entity-meta" dir="ltr">
+                  {e.client_phone}
+                </span>
+                {e.service_name ? (
+                  <span className="admin-entity-meta" title={e.service_name}>
+                    {truncateLabel(e.service_name, NAME_LIMITS.service)}
+                  </span>
+                ) : null}
+                {e.target_date ? (
+                  <span className="admin-entity-meta">
+                    יעד: {formatPreferredDate(e.target_date)}
+                    {e.any_time ? " · כל היום" : ""}
+                  </span>
+                ) : null}
+                <span className="admin-badge">
+                  {e.status === "waiting" ? "ממתין" : e.status === "offered" ? "הוצע תור" : e.status}
+                </span>
+              </div>
+              <div className="admin-entity-actions admin-entity-actions-wrap">
+                {e.status === "waiting" ? (
+                  <button type="button" className="cal-chip" onClick={() => void manualOffer(e)}>
+                    הצע תור
+                  </button>
+                ) : null}
+                <a className="cal-chip" href={`tel:${e.client_phone}`}>
+                  חיוג
+                </a>
+                <button type="button" className="admin-danger-link" onClick={() => void remove(e)}>
+                  הסר
                 </button>
-              ) : null}
-              <button type="button" className="cal-chip" onClick={() => void setStatus(e.id, "booked")}>
-                נקבע תור
-              </button>
-              <button type="button" className="admin-danger-link" onClick={() => void remove(e)}>
-                הסר
-              </button>
-            </div>
-          </article>
-        ))}
-        {!entries.length ? <p className="admin-muted">אין אנשים ברשימת ההמתנה</p> : null}
-      </div>
+              </div>
+            </article>
+          ))}
+          {!entries.length ? <p className="admin-muted">אין אנשים ברשימת ההמתנה</p> : null}
+        </div>
+      ) : null}
 
-      {modal ? (
+      {modal && enabled ? (
         <div
           className="cal-modal"
           role="dialog"
@@ -221,27 +240,29 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
                 <input
                   required
                   value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  autoComplete="name"
+                  maxLength={NAME_LIMITS.person}
+                  onChange={(e) =>
+                    setForm({ ...form, name: e.target.value.slice(0, NAME_LIMITS.person) })
+                  }
                 />
               </label>
               <label>
                 <span>טלפון</span>
                 <input
                   required
+                  dir="ltr"
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  inputMode="tel"
-                  placeholder="05X-XXX-XXXX"
                 />
               </label>
               <label>
-                <span>שירות (אופציונלי)</span>
+                <span>שירות</span>
                 <select
+                  required
                   value={form.serviceId}
                   onChange={(e) => setForm({ ...form, serviceId: e.target.value })}
                 >
-                  <option value="">— ללא —</option>
+                  <option value="">בחרו שירות</option>
                   {services.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
@@ -250,8 +271,9 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
                 </select>
               </label>
               <label>
-                <span>תאריך מועדף (אופציונלי)</span>
+                <span>תאריך יעד</span>
                 <input
+                  required
                   type="date"
                   value={form.preferredDate}
                   onChange={(e) => setForm({ ...form, preferredDate: e.target.value })}
@@ -259,17 +281,19 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
               </label>
               <label>
                 <span>הערות</span>
-                <input
+                <textarea
                   value={form.notes}
-                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  maxLength={NAME_LIMITS.notes}
+                  onChange={(e) =>
+                    setForm({ ...form, notes: e.target.value.slice(0, NAME_LIMITS.notes) })
+                  }
                 />
               </label>
               {error ? <p className="cal-error">{error}</p> : null}
             </div>
             <div className="cal-modal-actions">
-              <span />
               <button type="submit" className="admin-btn-primary" disabled={saving}>
-                {saving ? "מוסיף…" : "הוסף לרשימה"}
+                {saving ? "שומר…" : "הוספה"}
               </button>
             </div>
           </form>

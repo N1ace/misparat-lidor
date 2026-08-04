@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { getShopSettings } from "@/lib/settings";
+import { onSlotFreed } from "@/lib/waitlist";
 
 export const runtime = "nodejs";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ token: string }> },
 ) {
   const { token } = await ctx.params;
   const sql = getSql();
   const settings = await getShopSettings();
+  const origin = new URL(req.url).origin;
 
   try {
     const result = await sql.begin(async (tx) => {
@@ -18,26 +20,30 @@ export async function POST(
         id: string;
         status: string;
         start: Date;
+        end: Date;
       }[]>`
-        select id, status, lower(period) as start
+        select id, status, lower(period) as start, upper(period) as end
         from appointments where cancel_token = ${token}
         for update
       `;
       if (!appt) return { error: "not_found" as const };
       if (appt.status === "cancelled") return { error: "already" as const };
+      if (appt.status === "held") return { error: "held" as const };
 
       const msLeft = new Date(appt.start).getTime() - Date.now();
       if (msLeft < settings.min_client_cancel_minutes * 60_000) {
         return { error: "too_late" as const };
       }
 
-      // Client-initiated cancel: no cancellation alerts
       await tx`update appointments set status = 'cancelled' where id = ${appt.id}::uuid`;
       await tx`
         update outbox set status = 'failed', last_error = 'appointment cancelled by client'
         where appointment_id = ${appt.id}::uuid and status = 'pending'
       `;
-      return { ok: true as const };
+      return {
+        ok: true as const,
+        period: { start: new Date(appt.start), end: new Date(appt.end) },
+      };
     });
 
     if ("error" in result) {
@@ -50,8 +56,18 @@ export async function POST(
           { status: 400 },
         );
       }
+      if (result.error === "held") {
+        return NextResponse.json({ error: "לא ניתן לבטל הצעה ממתינה מכאן" }, { status: 400 });
+      }
       return NextResponse.json({ ok: true });
     }
+
+    try {
+      await onSlotFreed(result.period, { origin });
+    } catch (e) {
+      console.error("[cancel] waitlist offer failed", e);
+    }
+
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error(e);

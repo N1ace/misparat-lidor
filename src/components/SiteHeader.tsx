@@ -46,7 +46,6 @@ export function SiteHeader({ solid = false }: { solid?: boolean }) {
             </a>
           ))}
           <Link href="/booking">קביעת תור</Link>
-          <Link href="/account">אזור אישי</Link>
         </nav>
         <div className="head-actions">
           <a className="head-phone phone-ltr" href={`tel:${SHOP.phoneE164}`}>
@@ -77,9 +76,6 @@ export function SiteHeader({ solid = false }: { solid?: boolean }) {
         ))}
         <Link href="/booking" onClick={() => setMenuOpen(false)}>
           קביעת תור
-        </Link>
-        <Link href="/account" onClick={() => setMenuOpen(false)}>
-          אזור אישי
         </Link>
       </div>
     </header>

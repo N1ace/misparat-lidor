@@ -69,19 +69,29 @@ export function HoursDropdown({ className = "" }: { className?: string }) {
   useEffect(() => {
     setDay(new Date().getDay());
     let cancelled = false;
-    Promise.all([fetch("/api/hours"), fetch("/api/closures")])
-      .then(async ([hoursRes, closuresRes]) => {
-        const hoursData = await hoursRes.json().catch(() => null);
-        const closuresData = await closuresRes.json().catch(() => null);
-        if (cancelled) return;
-        if (hoursData?.byDay) setByDay(hoursData.byDay);
-        if (Array.isArray(closuresData?.closures)) setClosures(closuresData.closures);
-      })
-      .catch(() => {
-        /* keep fallback */
-      });
+    const load = () => {
+      Promise.all([fetch("/api/hours"), fetch("/api/closures")])
+        .then(async ([hoursRes, closuresRes]) => {
+          const hoursData = await hoursRes.json().catch(() => null);
+          const closuresData = await closuresRes.json().catch(() => null);
+          if (cancelled) return;
+          if (hoursData?.byDay) setByDay(hoursData.byDay);
+          if (Array.isArray(closuresData?.closures)) setClosures(closuresData.closures);
+        })
+        .catch(() => {
+          /* keep fallback */
+        });
+    };
+    load();
+    const onVis = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    window.addEventListener("focus", load);
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", load);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
 

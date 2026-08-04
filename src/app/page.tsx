@@ -482,7 +482,10 @@ export default async function HomePage() {
         <a className="phone-ltr" href={`tel:${SHOP.phoneE164}`} aria-label="חיוג למספרה">
           📞 <bdi>חיוג</bdi>
         </a>
-        <a href={bookWa}>וואטסאפ</a>
+        <a href={bookWa} target="_blank" rel="noopener noreferrer" aria-label="וואטסאפ">
+          <span className="icn i-whatsapp" aria-hidden="true" />
+          וואטסאפ
+        </a>
         <Link className="book" href="/booking">
           קביעת תור
         </Link>

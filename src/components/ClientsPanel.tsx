@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatInTimeZone } from "date-fns-tz";
 import {
   APPT_STATUS_OPTIONS,
@@ -8,6 +8,9 @@ import {
   type ApptStatus,
 } from "@/lib/appointment-status";
 import type { ReliabilityColor, ReliabilityStat } from "@/lib/client-reliability";
+import { NAME_LIMITS, truncateLabel } from "@/lib/name-limits";
+import { formatIsraeliPhone } from "@/lib/phone";
+import { TZ } from "@/lib/shop";
 
 type Client = {
   id: string;
@@ -38,6 +41,10 @@ type Counts = {
   confirmed: number;
 };
 
+type ReliabilityFilter = "all" | ReliabilityColor | "repeat_no_show";
+type SortColumn = "name" | "score" | "total_bookings" | "last_booking";
+type SortDirection = "asc" | "desc";
+
 const emptyForm = { name: "", phone: "", email: "", notes: "" };
 
 function ReliabilityDot({
@@ -58,9 +65,51 @@ function ReliabilityDot({
   );
 }
 
+function IconPencil() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconTrash() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 6h18M8 6V4h8v2m-1 0v14a2 2 0 01-2 2H9a2 2 0 01-2-2V6h10z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function hebrewLastBooking(iso: string | null | undefined) {
+  if (!iso) return null;
+  return new Intl.DateTimeFormat("he-IL", {
+    timeZone: TZ,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(iso));
+}
+
 export function ClientsPanel() {
   const [q, setQ] = useState("");
   const [clients, setClients] = useState<Client[]>([]);
+  const [relFilter, setRelFilter] = useState<ReliabilityFilter>("all");
+  const [sortColumn, setSortColumn] = useState<SortColumn>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [modal, setModal] = useState<"add" | "edit" | null>(null);
   const [selected, setSelected] = useState<Client | null>(null);
   const [history, setHistory] = useState<Appt[]>([]);
@@ -71,11 +120,11 @@ export function ClientsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async (query = q) => {
-    const res = await fetch(`/api/admin/clients${query ? `?q=${encodeURIComponent(query)}` : ""}`);
+  const load = useCallback(async () => {
+    const res = await fetch("/api/admin/clients");
     const data = await res.json();
     setClients(data.clients || []);
-  }, [q]);
+  }, []);
 
   const loadHistory = useCallback(async (phone: string) => {
     const res = await fetch(`/api/admin/clients/history?phone=${encodeURIComponent(phone)}`);
@@ -87,10 +136,8 @@ export function ClientsPanel() {
   }, []);
 
   useEffect(() => {
-    void load("");
-    // initial list only — search submits explicitly
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void load();
+  }, [load]);
 
   useEffect(() => {
     if (!modal) return;
@@ -100,6 +147,55 @@ export function ClientsPanel() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [modal]);
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const digits = q.replace(/\D/g, "");
+    let list = clients.filter((c) => {
+      if (!needle && !digits) return true;
+      if (c.name.toLowerCase().includes(needle)) return true;
+      if (c.email?.toLowerCase().includes(needle)) return true;
+      if (digits && c.phone.replace(/\D/g, "").includes(digits)) return true;
+      return false;
+    });
+
+    if (relFilter === "repeat_no_show") {
+      list = list.filter((c) => c.reliability?.is_repeat_no_show);
+    } else if (relFilter !== "all") {
+      list = list.filter((c) => (c.reliability?.color || "grey") === relFilter);
+    }
+
+    const dir = sortDirection === "asc" ? 1 : -1;
+    list = [...list].sort((a, b) => {
+      const ra = a.reliability;
+      const rb = b.reliability;
+      if (sortColumn === "name") {
+        return a.name.localeCompare(b.name, "he") * dir;
+      }
+      if (sortColumn === "score") {
+        const sa = ra?.score ?? -1;
+        const sb = rb?.score ?? -1;
+        return (sa - sb) * dir;
+      }
+      if (sortColumn === "total_bookings") {
+        return ((ra?.total_bookings ?? 0) - (rb?.total_bookings ?? 0)) * dir;
+      }
+      const la = ra?.last_booking_at ? new Date(ra.last_booking_at).getTime() : 0;
+      const lb = rb?.last_booking_at ? new Date(rb.last_booking_at).getTime() : 0;
+      return (la - lb) * dir;
+    });
+
+    return list;
+  }, [clients, q, relFilter, sortColumn, sortDirection]);
+
+  function toggleSort(col: SortColumn) {
+    if (sortColumn === col) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(col);
+      setSortDirection(col === "name" ? "asc" : "desc");
+    }
+  }
 
   function openAdd() {
     setSelected(null);
@@ -209,80 +305,205 @@ export function ClientsPanel() {
     await load();
   }
 
+  function sortMark(col: SortColumn) {
+    if (sortColumn !== col) return "↕";
+    return sortDirection === "asc" ? "↑" : "↓";
+  }
+
   return (
     <div>
       <div className="admin-page-head">
         <div>
           <h1>לקוחות</h1>
-          <p>כרטיסי לקוח, רמזור אמינות והיסטוריית תורים מלאה.</p>
+          <p>
+            לקוחות העסק
+            {filtered.length !== clients.length
+              ? ` · ${filtered.length} מתוך ${clients.length}`
+              : ` · ${clients.length}`}
+          </p>
         </div>
         <button type="button" className="admin-btn-primary" onClick={openAdd}>
-          + לקוח חדש
+          + הוסף לקוח
         </button>
       </div>
 
-      <form
-        className="admin-search admin-card"
-        style={{ marginBottom: "1rem" }}
-        onSubmit={(e) => {
-          e.preventDefault();
-          void load(q);
-        }}
-      >
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="חיפוש לפי שם / טלפון / אימייל"
-        />
-        <button type="submit" className="cal-chip">
-          חפש
-        </button>
-      </form>
+      <div className="clients-toolbar">
+        <div className="admin-search clients-search">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="חיפוש לפי שם או טלפון"
+            aria-label="חיפוש לפי שם או טלפון"
+          />
+        </div>
+        <label className="clients-filter">
+          <span className="sr-only">סינון רמזור</span>
+          <select
+            value={relFilter}
+            onChange={(e) => setRelFilter(e.target.value as ReliabilityFilter)}
+          >
+            <option value="all">כל הרמזורים</option>
+            <option value="green">ירוק</option>
+            <option value="orange">כתום</option>
+            <option value="red">אדום</option>
+            <option value="grey">חדש</option>
+            <option value="repeat_no_show">אי-הגעות חוזרות</option>
+          </select>
+        </label>
+      </div>
 
-      <div className="admin-entity-grid">
-        {clients.map((c) => {
-          const rel = c.reliability;
-          return (
-            <article key={c.id} className="admin-entity-card">
-              <button type="button" className="admin-entity-main" onClick={() => void openEdit(c)}>
-                <span className="admin-entity-title-row">
-                  {rel ? <ReliabilityDot color={rel.color} tooltip={rel.tooltip} /> : null}
-                  <strong>{c.name}</strong>
-                </span>
-                <span className="admin-entity-meta" dir="ltr">
-                  {c.phone}
-                </span>
-                {c.email ? (
-                  <span className="admin-entity-meta" dir="ltr">
-                    {c.email}
-                  </span>
-                ) : null}
-                {rel ? (
-                  <span className="admin-entity-meta rel-summary">
-                    {rel.score != null ? `ציון ${rel.score}% · ${rel.label_he}` : rel.label_he}
-                    {rel.total_bookings > 0
-                      ? ` · ${rel.total_bookings} תורים`
-                      : " · אין היסטוריה"}
-                  </span>
-                ) : null}
-                {c.notes ? <span className="admin-entity-notes">{c.notes}</span> : null}
-              </button>
-              <div className="admin-entity-actions">
-                <button type="button" className="cal-chip" onClick={() => void openEdit(c)}>
-                  פרטים
+      <div className="clients-table-wrap admin-card">
+        <table className="clients-table">
+          <thead>
+            <tr>
+              <th>
+                <button type="button" className="clients-sort" onClick={() => toggleSort("name")}>
+                  שם <span aria-hidden>{sortMark("name")}</span>
                 </button>
+              </th>
+              <th>טלפון</th>
+              <th className="center">רמזור</th>
+              <th className="center">
+                <button type="button" className="clients-sort" onClick={() => toggleSort("score")}>
+                  ציון <span aria-hidden>{sortMark("score")}</span>
+                </button>
+              </th>
+              <th className="center">
                 <button
                   type="button"
-                  className="admin-danger-link"
-                  onClick={() => void removeClient(c)}
+                  className="clients-sort"
+                  onClick={() => toggleSort("total_bookings")}
                 >
-                  מחק
+                  תורים <span aria-hidden>{sortMark("total_bookings")}</span>
                 </button>
+              </th>
+              <th className="center">
+                <button
+                  type="button"
+                  className="clients-sort"
+                  onClick={() => toggleSort("last_booking")}
+                >
+                  תור אחרון <span aria-hidden>{sortMark("last_booking")}</span>
+                </button>
+              </th>
+              <th className="center">לא הגיע</th>
+              <th className="center">פעולות</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((c) => {
+              const rel = c.reliability;
+              const last = hebrewLastBooking(rel?.last_booking_at);
+              return (
+                <tr key={c.id} onClick={() => void openEdit(c)}>
+                  <td>
+                    <div className="clients-name-cell">
+                      <span className="clients-name" title={c.name}>
+                        {truncateLabel(c.name, NAME_LIMITS.person)}
+                      </span>
+                      {rel?.label_he === "חדש" ? (
+                        <span className="clients-pill">חדש</span>
+                      ) : null}
+                      {rel?.is_repeat_no_show ? (
+                        <span className="clients-pill danger">חוזר</span>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td>
+                    <bdi className="clients-phone">{formatIsraeliPhone(c.phone)}</bdi>
+                  </td>
+                  <td className="center">
+                    {rel ? (
+                      <ReliabilityDot color={rel.color} tooltip={rel.tooltip} />
+                    ) : (
+                      <ReliabilityDot color="grey" tooltip="אין נתונים" />
+                    )}
+                  </td>
+                  <td className="center clients-num">
+                    {rel?.score != null && rel.color !== "grey" ? `${rel.score}%` : "—"}
+                  </td>
+                  <td className="center clients-num">{rel?.total_bookings ?? 0}</td>
+                  <td className="center clients-last">
+                    {last || <span className="admin-muted">—</span>}
+                  </td>
+                  <td
+                    className={`center clients-num${(rel?.no_show ?? 0) >= 2 ? " danger" : ""}`}
+                  >
+                    {rel?.no_show ?? 0}
+                  </td>
+                  <td className="center" onClick={(e) => e.stopPropagation()}>
+                    <div className="clients-row-actions">
+                      <button
+                        type="button"
+                        className="admin-icon-btn"
+                        title="עריכה"
+                        aria-label="עריכה"
+                        onClick={() => void openEdit(c)}
+                      >
+                        <IconPencil />
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-icon-btn danger"
+                        title="מחיקה"
+                        aria-label="מחיקה"
+                        onClick={() => void removeClient(c)}
+                      >
+                        <IconTrash />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {!filtered.length ? <p className="admin-muted clients-empty">אין לקוחות</p> : null}
+      </div>
+
+      <div className="clients-mobile-list">
+        {filtered.map((c) => {
+          const rel = c.reliability;
+          const last = hebrewLastBooking(rel?.last_booking_at);
+          return (
+            <article
+              key={c.id}
+              className="clients-mobile-card"
+              role="button"
+              tabIndex={0}
+              onClick={() => void openEdit(c)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  void openEdit(c);
+                }
+              }}
+            >
+              <div className="clients-mobile-top">
+                <div>
+                  <div className="clients-name-cell">
+                    <strong title={c.name}>{truncateLabel(c.name, NAME_LIMITS.person)}</strong>
+                    {rel?.label_he === "חדש" ? <span className="clients-pill">חדש</span> : null}
+                    {rel?.is_repeat_no_show ? (
+                      <span className="clients-pill danger">חוזר</span>
+                    ) : null}
+                  </div>
+                  <bdi className="clients-phone">{formatIsraeliPhone(c.phone)}</bdi>
+                </div>
+                {rel ? <ReliabilityDot color={rel.color} tooltip={rel.tooltip} /> : null}
+              </div>
+              <div className="clients-mobile-meta">
+                <span>תורים: {rel?.total_bookings ?? 0}</span>
+                <span>
+                  ציון:{" "}
+                  {rel?.score != null && rel.color !== "grey" ? `${rel.score}%` : "—"}
+                </span>
+                <span>לא הגיע: {rel?.no_show ?? 0}</span>
+                <span>תור אחרון: {last || "—"}</span>
               </div>
             </article>
           );
         })}
-        {!clients.length ? <p className="admin-muted">אין לקוחות</p> : null}
       </div>
 
       {modal ? (
@@ -316,7 +537,10 @@ export function ClientsPanel() {
                 <input
                   required
                   value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  maxLength={NAME_LIMITS.person}
+                  onChange={(e) =>
+                    setForm({ ...form, name: e.target.value.slice(0, NAME_LIMITS.person) })
+                  }
                   autoComplete="name"
                 />
               </label>
@@ -344,7 +568,10 @@ export function ClientsPanel() {
                 <span>הערות</span>
                 <textarea
                   value={form.notes}
-                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  maxLength={NAME_LIMITS.notes}
+                  onChange={(e) =>
+                    setForm({ ...form, notes: e.target.value.slice(0, NAME_LIMITS.notes) })
+                  }
                   rows={3}
                 />
               </label>
@@ -356,7 +583,11 @@ export function ClientsPanel() {
                     <h3>היסטוריית תורים</h3>
                     {reliability ? (
                       <span className="rel-badge" title={reliability.tooltip}>
-                        <ReliabilityDot color={reliability.color} tooltip={reliability.tooltip} size="sm" />
+                        <ReliabilityDot
+                          color={reliability.color}
+                          tooltip={reliability.tooltip}
+                          size="sm"
+                        />
                         {reliability.score != null
                           ? `${reliability.score}% · ${reliability.label_he}`
                           : reliability.label_he}
@@ -373,41 +604,51 @@ export function ClientsPanel() {
                     </div>
                   ) : null}
                   {history.length ? (
-                    <ul className="admin-history-list">
-                      {history.map((a) => (
-                        <li key={a.id} className={`admin-history-row status-${a.status}`}>
-                          <div className="admin-history-main">
-                            <strong>
-                              {formatInTimeZone(a.start, "Asia/Jerusalem", "dd/MM/yyyy HH:mm")}
-                            </strong>
-                            <span>
-                              {a.service_name}
-                              {" · "}
-                              {formatInTimeZone(a.start, "Asia/Jerusalem", "HH:mm")}–
-                              {formatInTimeZone(a.end, "Asia/Jerusalem", "HH:mm")}
-                            </span>
-                            {a.notes ? <em>{a.notes}</em> : null}
-                          </div>
-                          <label className="admin-history-status">
-                            <span className="sr-only">סטטוס</span>
-                            <select
-                              value={a.status}
-                              disabled={statusBusy === a.id}
-                              onChange={(e) =>
-                                void updateApptStatus(a.id, e.target.value as ApptStatus)
-                              }
-                              aria-label={`סטטוס תור ${statusLabel(a.status)}`}
-                            >
-                              {APPT_STATUS_OPTIONS.map((o) => (
-                                <option key={o.value} value={o.value}>
-                                  {o.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="admin-history-sheet-wrap">
+                      <table className="admin-history-sheet">
+                        <thead>
+                          <tr>
+                            <th>תאריך</th>
+                            <th>שירות</th>
+                            <th>שעה</th>
+                            <th>סטטוס</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {history.map((a) => (
+                            <tr key={a.id} className={`status-${a.status}`}>
+                              <td>
+                                {formatInTimeZone(a.start, TZ, "dd/MM/yyyy")}
+                              </td>
+                              <td title={a.service_name}>
+                                {truncateLabel(a.service_name, NAME_LIMITS.service)}
+                              </td>
+                              <td dir="ltr">
+                                {formatInTimeZone(a.start, TZ, "HH:mm")}–
+                                {formatInTimeZone(a.end, TZ, "HH:mm")}
+                              </td>
+                              <td>
+                                <select
+                                  className="admin-history-select"
+                                  value={a.status}
+                                  disabled={statusBusy === a.id}
+                                  onChange={(e) =>
+                                    void updateApptStatus(a.id, e.target.value as ApptStatus)
+                                  }
+                                  aria-label={`סטטוס תור ${statusLabel(a.status)}`}
+                                >
+                                  {APPT_STATUS_OPTIONS.map((o) => (
+                                    <option key={o.value} value={o.value}>
+                                      {o.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   ) : (
                     <p className="admin-muted">אין תורים בהיסטוריה</p>
                   )}

@@ -110,6 +110,18 @@ export function emailReschedule(opts: {
   };
 }
 
+export function smsWaitlistOffer(opts: { day: string; time: string; url: string }): string {
+  return `התפנה תור ${opts.day} ${opts.time}. יש לך 15 דק' לאשר: ${opts.url}`;
+}
+
+export function smsWaitlistJoined(opts: { date: string }): string {
+  return `נרשמת לרשימת המתנה ל-${opts.date}. נעדכן אם יתפנה תור.`;
+}
+
+export function smsWaitlistLost(): string {
+  return `התור נתפס. נשארת ברשימה להתפנות הבא.`;
+}
+
 export function otpEmailBody(code: string): { subject: string; text: string } {
   return {
     subject: `קוד לשינוי סיסמה — ${SHOP.name}`,

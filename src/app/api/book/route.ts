@@ -7,6 +7,7 @@ import { formatJerusalem } from "@/lib/time";
 import { SHOP } from "@/lib/shop";
 import { getShopSettings } from "@/lib/settings";
 import { readClientSession } from "@/lib/client-auth";
+import { validateBookablePeriod } from "@/lib/availability";
 
 export const runtime = "nodejs";
 
@@ -82,7 +83,17 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  const end = new Date(start.getTime() + service.duration_minutes * 60_000);
+
+  const slotCheck = await validateBookablePeriod({
+    serviceId: service.id,
+    start,
+    durationMinutes: service.duration_minutes,
+  });
+  if (!slotCheck.ok) {
+    const status = slotCheck.code === "outside_hours" || slotCheck.code === "lead" ? 400 : 409;
+    return NextResponse.json({ error: slotCheck.reason, code: slotCheck.code }, { status });
+  }
+  const end = slotCheck.end;
   const cancelToken = crypto.randomUUID();
   const origin = req.nextUrl.origin;
   const cancelUrl = `${origin}/cancel/${cancelToken}`;

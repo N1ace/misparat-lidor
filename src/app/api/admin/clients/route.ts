@@ -3,6 +3,7 @@ import { readSession } from "@/lib/auth";
 import { getSql } from "@/lib/db";
 import { autoCompletePastAppointments } from "@/lib/appointments-auto";
 import { computeReliability, type ReliabilityStat } from "@/lib/client-reliability";
+import { clampName, NAME_LIMITS } from "@/lib/name-limits";
 import { normalizePhoneIL, isValidEmail } from "@/lib/phone";
 
 export const runtime = "nodejs";
@@ -27,15 +28,15 @@ async function withReliability(clients: ClientRow[]) {
   if (!clients.length) return [];
   const sql = getSql();
   const phones = clients.map((c) => c.phone);
-  const appts = await sql<{ client_phone: string; status: string }[]>`
-    select client_phone, status
+  const appts = await sql<{ client_phone: string; status: string; start: Date }[]>`
+    select client_phone, status, lower(period) as start
     from appointments
     where client_phone = any(${phones})
   `;
-  const byPhone = new Map<string, { status: string }[]>();
+  const byPhone = new Map<string, { status: string; start: Date }[]>();
   for (const a of appts) {
     const list = byPhone.get(a.client_phone) || [];
-    list.push({ status: a.status });
+    list.push({ status: a.status, start: a.start });
     byPhone.set(a.client_phone, list);
   }
   return clients.map((c) => {
@@ -82,17 +83,22 @@ export async function POST(req: NextRequest) {
   if (!body.name?.trim() || !body.phone) {
     return NextResponse.json({ error: "שם וטלפון חובה" }, { status: 400 });
   }
+  const name = clampName(body.name, NAME_LIMITS.person);
+  if (!name) return NextResponse.json({ error: "שם וטלפון חובה" }, { status: 400 });
   const phone = normalizePhoneIL(body.phone);
   if (!phone) return NextResponse.json({ error: "טלפון לא תקין" }, { status: 400 });
   const email = body.email?.trim() ? body.email.trim().toLowerCase() : null;
   if (email && !isValidEmail(email)) {
     return NextResponse.json({ error: "אימייל לא תקין" }, { status: 400 });
   }
+  const notes = body.notes?.trim()
+    ? clampName(body.notes, NAME_LIMITS.notes)
+    : null;
   const sql = getSql();
   try {
     const [row] = await sql`
       insert into clients (name, phone, email, notes)
-      values (${body.name.trim()}, ${phone}, ${email}, ${body.notes?.trim() || null})
+      values (${name}, ${phone}, ${email}, ${notes})
       returning id, name, phone, email, notes, created_at, updated_at
     `;
     return NextResponse.json({ client: row });
@@ -130,10 +136,14 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "אימייל לא תקין" }, { status: 400 });
   }
   const notesProvided = body.notes !== undefined;
-  const notesValue = body.notes ?? null;
+  const notesValue =
+    body.notes === undefined || body.notes == null
+      ? null
+      : clampName(body.notes, NAME_LIMITS.notes) || null;
+  const nameValue = body.name !== undefined ? clampName(body.name, NAME_LIMITS.person) || null : null;
   const [row] = await sql`
     update clients set
-      name = coalesce(${body.name?.trim() || null}, name),
+      name = coalesce(${nameValue}, name),
       phone = coalesce(${phone}, phone),
       email = case when ${emailProvided} then ${email} else email end,
       notes = case when ${notesProvided} then ${notesValue} else notes end,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isValidEmail, normalizePhoneIL } from "@/lib/phone";
 import { requestClientLoginOtp } from "@/lib/client-otp";
+import { clampName, NAME_LIMITS } from "@/lib/name-limits";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -25,6 +26,8 @@ export async function POST(req: NextRequest) {
   }
   const phone = normalizePhoneIL(body.phone);
   if (!phone) return NextResponse.json({ error: "טלפון לא תקין" }, { status: 400 });
+  const name = clampName(body.name, NAME_LIMITS.person);
+  if (!name) return NextResponse.json({ error: "חסרים שדות" }, { status: 400 });
 
   const email: string | null = body.email?.trim() ? body.email.trim().toLowerCase() : null;
   if (body.channel === "email") {
@@ -38,7 +41,7 @@ export async function POST(req: NextRequest) {
   try {
     const result = await requestClientLoginOtp({
       phone,
-      name: body.name.trim(),
+      name,
       channel: body.channel,
       email,
     });

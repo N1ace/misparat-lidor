@@ -16,6 +16,9 @@ export type ShopSettings = {
   notify_reminder: boolean;
   notify_cancellation: boolean;
   waitlist_enabled: boolean;
+  waitlist_offer_ttl_minutes: number;
+  waitlist_min_lead_minutes: number;
+  waitlist_max_per_phone: number;
 };
 
 export const DEFAULT_SETTINGS: ShopSettings = {
@@ -34,6 +37,9 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   notify_reminder: true,
   notify_cancellation: true,
   waitlist_enabled: true,
+  waitlist_offer_ttl_minutes: 15,
+  waitlist_min_lead_minutes: 30,
+  waitlist_max_per_phone: 2,
 };
 
 export async function getShopSettings(): Promise<ShopSettings> {
@@ -44,7 +50,10 @@ export async function getShopSettings(): Promise<ShopSettings> {
              online_booking_horizon_days, manual_booking_horizon_days,
              min_client_cancel_minutes, lead_minutes, slot_step_minutes, buffer_minutes,
              reminder_hours_before,
-             notify_confirmation, notify_reminder, notify_cancellation, waitlist_enabled
+             notify_confirmation, notify_reminder, notify_cancellation, waitlist_enabled,
+             coalesce(waitlist_offer_ttl_minutes, 15) as waitlist_offer_ttl_minutes,
+             coalesce(waitlist_min_lead_minutes, 30) as waitlist_min_lead_minutes,
+             coalesce(waitlist_max_per_phone, 2) as waitlist_max_per_phone
       from shop_settings where id = 1
     `;
     return row ? { ...DEFAULT_SETTINGS, ...row } : DEFAULT_SETTINGS;
@@ -64,12 +73,14 @@ export async function updateShopSettings(
       id, business_name, business_phone, business_address, owner_email,
       online_booking_horizon_days, manual_booking_horizon_days, min_client_cancel_minutes,
       lead_minutes, slot_step_minutes, buffer_minutes, reminder_hours_before,
-      notify_confirmation, notify_reminder, notify_cancellation, waitlist_enabled, updated_at
+      notify_confirmation, notify_reminder, notify_cancellation, waitlist_enabled,
+      waitlist_offer_ttl_minutes, waitlist_min_lead_minutes, waitlist_max_per_phone, updated_at
     ) values (
       1, ${next.business_name}, ${next.business_phone}, ${next.business_address}, ${next.owner_email},
       ${next.online_booking_horizon_days}, ${next.manual_booking_horizon_days}, ${next.min_client_cancel_minutes},
       ${next.lead_minutes}, ${next.slot_step_minutes}, ${next.buffer_minutes}, ${next.reminder_hours_before},
       ${next.notify_confirmation}, ${next.notify_reminder}, ${next.notify_cancellation}, ${next.waitlist_enabled},
+      ${next.waitlist_offer_ttl_minutes}, ${next.waitlist_min_lead_minutes}, ${next.waitlist_max_per_phone},
       now()
     )
     on conflict (id) do update set
@@ -88,6 +99,9 @@ export async function updateShopSettings(
       notify_reminder = excluded.notify_reminder,
       notify_cancellation = excluded.notify_cancellation,
       waitlist_enabled = excluded.waitlist_enabled,
+      waitlist_offer_ttl_minutes = excluded.waitlist_offer_ttl_minutes,
+      waitlist_min_lead_minutes = excluded.waitlist_min_lead_minutes,
+      waitlist_max_per_phone = excluded.waitlist_max_per_phone,
       updated_at = now()
   `;
   return next;

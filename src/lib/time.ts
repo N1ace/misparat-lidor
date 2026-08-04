@@ -1,3 +1,4 @@
+import { he } from "date-fns/locale";
 import { formatInTimeZone, fromZonedTime, toZonedTime } from "date-fns-tz";
 import { TZ } from "./shop";
 
@@ -12,9 +13,10 @@ export function wallTimeToUtc(dateYmd: string, hhmmss: string): Date {
   return fromZonedTime(`${dateYmd}T${t}`, TZ);
 }
 
+/** Formats in Asia/Jerusalem with Hebrew locale (weekdays/months). */
 export function formatJerusalem(isoOrDate: string | Date, pattern: string): string {
   const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
-  return formatInTimeZone(d, TZ, pattern);
+  return formatInTimeZone(d, TZ, pattern, { locale: he });
 }
 
 export function hebrewWeekday(dateYmd: string): string {

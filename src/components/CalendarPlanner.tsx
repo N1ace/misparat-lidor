@@ -2,20 +2,27 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatInTimeZone } from "date-fns-tz";
-import { TZ } from "@/lib/shop";
 import { TimeSelect24 } from "@/components/TimeSelect24";
+import {
+  normalizeServiceColor,
+  serviceTintStyle,
+} from "@/lib/service-colors";
+import { NAME_LIMITS, truncateLabel } from "@/lib/name-limits";
+import { TZ } from "@/lib/shop";
 
 type Service = {
   id: string;
   name: string;
   duration_minutes: number;
   price_agorot: number;
+  color?: string | null;
 };
 
 type Appt = {
   id: string;
   service_id: string | null;
   service_name: string;
+  service_color?: string | null;
   client_name: string;
   client_phone: string;
   status: string;
@@ -29,7 +36,7 @@ type ModalMode = "add" | "edit" | null;
 
 const DISPLAY_PAD_START = 8; // preferred earliest hour shown (may extend earlier)
 const DISPLAY_PAD_END = 22; // preferred last exclusive hour shown (may extend later)
-const HOUR_PX = 56;
+const HOUR_PX = 72;
 
 function timeToMins(hhmm: string): number {
   const [h, m] = String(hhmm).slice(0, 5).split(":").map(Number);
@@ -60,6 +67,7 @@ const STATUS_LABEL: Record<string, string> = {
   done: "בוצע",
   no_show: "לא הגיע",
   cancelled: "בוטל",
+  held: "ממתין לאישור",
 };
 
 function pad2(n: number) {
@@ -216,20 +224,30 @@ export function CalendarPlanner({ services }: { services: Service[] }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/admin/hours")
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        const rows = (data.hours || []) as { open_time: string; close_time: string }[];
-        const range = plannerHourRange(rows);
-        setHourStart(range.hourStart);
-        setHourEnd(range.hourEnd);
-      })
-      .catch(() => {
-        /* keep padded defaults */
-      });
+    const loadHours = () => {
+      fetch("/api/admin/hours")
+        .then((r) => r.json())
+        .then((data) => {
+          if (cancelled) return;
+          const rows = (data.hours || []) as { open_time: string; close_time: string }[];
+          const range = plannerHourRange(rows);
+          setHourStart(range.hourStart);
+          setHourEnd(range.hourEnd);
+        })
+        .catch(() => {
+          /* keep padded defaults */
+        });
+    };
+    loadHours();
+    const onVis = () => {
+      if (document.visibilityState === "visible") loadHours();
+    };
+    window.addEventListener("focus", loadHours);
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", loadHours);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
 
@@ -440,21 +458,45 @@ export function CalendarPlanner({ services }: { services: Service[] }) {
     return appointments.filter((a) => formatInTimeZone(a.start, TZ, "yyyy-MM-dd") === ymd);
   }
 
+  const serviceColorById = useMemo(() => {
+    const map = new Map<string, string>();
+    services.forEach((s, i) => {
+      map.set(s.id, normalizeServiceColor(s.color, i));
+    });
+    return map;
+  }, [services]);
+
+  function colorForAppt(a: Appt) {
+    if (a.service_color) return normalizeServiceColor(a.service_color);
+    if (a.service_id && serviceColorById.has(a.service_id)) {
+      return serviceColorById.get(a.service_id)!;
+    }
+    const idx = Math.max(
+      0,
+      services.findIndex((s) => s.id === a.service_id),
+    );
+    return normalizeServiceColor(null, idx);
+  }
+
   function blockStyle(a: Appt, layout?: OverlapLayout) {
     const startM = minutesFromIso(a.start);
     const endM = minutesFromIso(a.end);
     const top = ((startM - hourStart * 60) / 60) * HOUR_PX;
-    const height = Math.max(((endM - startM) / 60) * HOUR_PX, 22);
+    const height = Math.max(((endM - startM) / 60) * HOUR_PX, 30);
     const column = layout?.column ?? 0;
     const columnCount = layout?.columnCount ?? 1;
     const widthPct = 100 / columnCount;
-    return {
+    const layoutStyle = {
       top,
       height,
       insetInlineStart: `calc(${column * widthPct}% + 2px)`,
       width: `calc(${widthPct}% - 4px)`,
       insetInlineEnd: "auto" as const,
     };
+    if (a.status === "done" || a.status === "no_show") {
+      return layoutStyle;
+    }
+    return { ...layoutStyle, ...serviceTintStyle(colorForAppt(a)) };
   }
 
   return (
@@ -464,7 +506,7 @@ export function CalendarPlanner({ services }: { services: Service[] }) {
           <h1>יומן</h1>
           <p>{labelTitle(view, focus)}</p>
         </div>
-        <button type="button" className="admin-btn-primary" onClick={() => openAdd()}>
+        <button type="button" className="admin-btn-primary cal-new-desktop" onClick={() => openAdd()}>
           + תור חדש
         </button>
       </div>
@@ -541,11 +583,21 @@ export function CalendarPlanner({ services }: { services: Service[] }) {
                       <span className="cal-month-count">{list.length} תורים</span>
                     ) : null}
                     <ul className="cal-month-list">
-                      {list.slice(0, 3).map((a) => (
-                        <li key={a.id}>
-                          {formatInTimeZone(a.start, TZ, "HH:mm")} {a.client_name}
-                        </li>
-                      ))}
+                      {list.slice(0, 3).map((a) => {
+                        const tint = serviceTintStyle(colorForAppt(a));
+                        return (
+                          <li
+                            key={a.id}
+                            style={{
+                              borderInlineStart: `3px solid ${tint.color}`,
+                              color: a.status === "done" || a.status === "no_show" ? undefined : tint.color,
+                            }}
+                          >
+                            {formatInTimeZone(a.start, TZ, "HH:mm")}{" "}
+                            {truncateLabel(a.client_name, 18)}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </button>
                 );
@@ -601,9 +653,10 @@ export function CalendarPlanner({ services }: { services: Service[] }) {
                         }}
                       >
                         <strong>
-                          <bdi>{formatInTimeZone(a.start, TZ, "HH:mm")}</bdi> {a.client_name}
+                          <bdi>{formatInTimeZone(a.start, TZ, "HH:mm")}</bdi>{" "}
+                          {truncateLabel(a.client_name, 16)}
                         </strong>
-                        <span>{a.service_name}</span>
+                        <span>{truncateLabel(a.service_name, NAME_LIMITS.service)}</span>
                       </button>
                     );
                   })}
@@ -652,7 +705,13 @@ export function CalendarPlanner({ services }: { services: Service[] }) {
               </label>
               <label>
                 <span>שם</span>
-                <input required value={addName} onChange={(e) => setAddName(e.target.value)} autoComplete="name" />
+                <input
+                  required
+                  value={addName}
+                  maxLength={NAME_LIMITS.person}
+                  onChange={(e) => setAddName(e.target.value.slice(0, NAME_LIMITS.person))}
+                  autoComplete="name"
+                />
               </label>
               <label>
                 <span>טלפון</span>
@@ -723,6 +782,15 @@ export function CalendarPlanner({ services }: { services: Service[] }) {
           </form>
         </div>
       ) : null}
+
+      <button
+        type="button"
+        className="cal-fab"
+        aria-label="תור חדש"
+        onClick={() => openAdd()}
+      >
+        +
+      </button>
     </div>
   );
 }

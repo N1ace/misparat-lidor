@@ -3,6 +3,7 @@ import { autoCompletePastAppointments } from "@/lib/appointments-auto";
 import { getSql } from "@/lib/db";
 import { getSmsProvider } from "@/lib/sms";
 import { getEmailProvider } from "@/lib/email";
+import { expireDueOffers } from "@/lib/waitlist";
 
 export const runtime = "nodejs";
 
@@ -17,15 +18,23 @@ type OutboxRow = {
 };
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get("x-cron-secret") || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const secret =
+    req.headers.get("x-cron-secret") ||
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!secret || secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  let waitlistExpired = 0;
+  try {
+    waitlistExpired = await expireDueOffers({ origin: req.nextUrl.origin });
+  } catch (e) {
+    console.error("[cron] waitlist expire", e);
   }
 
   const sql = getSql();
   const sms = getSmsProvider();
   const email = getEmailProvider();
-
   const autoCompleted = await autoCompletePastAppointments();
 
   let sent = 0;
@@ -51,6 +60,11 @@ export async function POST(req: NextRequest) {
     for (const row of due) {
       if (row.appt_status === "cancelled") {
         await tx`update outbox set status = 'failed', last_error = 'appointment cancelled' where id = ${row.id}::uuid`;
+        skipped += 1;
+        continue;
+      }
+      if (row.appt_status === "held" && row.kind !== "waitlist_offer") {
+        await tx`update outbox set status = 'failed', last_error = 'appointment held' where id = ${row.id}::uuid`;
         skipped += 1;
         continue;
       }
@@ -81,5 +95,5 @@ export async function POST(req: NextRequest) {
     }
   });
 
-  return NextResponse.json({ sent, failed, skipped, processed, autoCompleted });
+  return NextResponse.json({ sent, failed, skipped, processed, autoCompleted, waitlistExpired });
 }

@@ -1,34 +1,37 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { ShopSettings } from "@/lib/settings";
+import { DEFAULT_SETTINGS } from "@/lib/settings";
 
-const DEFAULTS: ShopSettings = {
-  business_name: "מספרת לידור",
-  business_phone: "053-530-1669",
-  business_address: "אבנר בן נר 1, אשדוד",
-  owner_email: null,
-  online_booking_horizon_days: 30,
-  manual_booking_horizon_days: 90,
-  min_client_cancel_minutes: 60,
-  lead_minutes: 30,
-  slot_step_minutes: 15,
-  buffer_minutes: 0,
-  reminder_hours_before: 24,
-  notify_confirmation: true,
-  notify_reminder: true,
-  notify_cancellation: true,
-  waitlist_enabled: true,
-};
+const DEFAULTS: ShopSettings = { ...DEFAULT_SETTINGS };
 
 type Tab = "business" | "booking" | "notifications" | "password";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "business", label: "עסק" },
-  { id: "booking", label: "כללי הזמנה" },
-  { id: "notifications", label: "התראות" },
-  { id: "password", label: "סיסמה" },
-];
+const TAB_HEAD: Record<Tab, { title: string; subtitle: string }> = {
+  business: {
+    title: "עסק",
+    subtitle: "שם העסק, טלפון, כתובת ואימייל בעלים.",
+  },
+  booking: {
+    title: "כללי הזמנה",
+    subtitle: "קביעת תורים, ביטולים, מבנה היומן ורשימת המתנה.",
+  },
+  notifications: {
+    title: "התראות",
+    subtitle: "הודעות ללקוח ותזכורות לפני התור.",
+  },
+  password: {
+    title: "סיסמה",
+    subtitle: "שינוי סיסמת מנהל והתנתקות מהמערכת.",
+  },
+};
+
+function parseTab(raw: string | null): Tab {
+  if (raw === "booking" || raw === "notifications" || raw === "password") return raw;
+  return "business";
+}
 
 function SettingField({
   label,
@@ -49,7 +52,10 @@ function SettingField({
 }
 
 export function SettingsPanel() {
-  const [tab, setTab] = useState<Tab>("business");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const tab = parseTab(searchParams.get("tab"));
+
   const [settings, setSettings] = useState<ShopSettings>(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -59,6 +65,8 @@ export function SettingsPanel() {
   const [pwStep, setPwStep] = useState<"request" | "confirm">("request");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
+
+  const head = TAB_HEAD[tab];
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,6 +85,11 @@ export function SettingsPanel() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    setMsg(null);
+    setError(null);
+  }, [tab]);
+
   async function save(patch: Partial<ShopSettings>) {
     setSaving(true);
     setError(null);
@@ -94,6 +107,10 @@ export function SettingsPanel() {
       }
       setSettings(data.settings);
       setMsg("נשמר");
+      if ("waitlist_enabled" in patch) {
+        router.refresh();
+        window.dispatchEvent(new Event("admin-settings-changed"));
+      }
     } catch {
       setError("שגיאת רשת");
     } finally {
@@ -150,37 +167,29 @@ export function SettingsPanel() {
     }
   }
 
+  async function logout() {
+    setSaving(true);
+    setError(null);
+    setMsg(null);
+    try {
+      await fetch("/api/admin/login", { method: "DELETE" });
+      router.replace("/admin/login");
+    } catch {
+      setError("שגיאת רשת");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (loading) return <p className="admin-muted">טוען הגדרות…</p>;
 
   return (
     <div>
       <div className="admin-page-head">
         <div>
-          <h1>הגדרות</h1>
-          <p>פרטי עסק, כללי הזמנה, התראות וחשבון.</p>
+          <h1>{head.title}</h1>
+          <p>{head.subtitle}</p>
         </div>
-        <a href="/admin/hours" className="cal-chip">
-          שעות פתיחה
-        </a>
-      </div>
-
-      <div className="admin-tabs cal-seg" role="tablist">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            className={tab === t.id ? "on" : undefined}
-            onClick={() => {
-              setTab(t.id);
-              setMsg(null);
-              setError(null);
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
       </div>
 
       {msg ? <p className="admin-ok">{msg}</p> : null}
@@ -199,10 +208,6 @@ export function SettingsPanel() {
             });
           }}
         >
-          <p className="admin-hint" style={{ marginTop: 0 }}>
-            שעות פתיחה שבועיות נערכות במסך{" "}
-            <a href="/admin/hours">שעות פעילות</a> — ומתעדכנות אוטומטית באתר.
-          </p>
           <label>
             <span>שם העסק</span>
             <input
@@ -352,7 +357,7 @@ export function SettingsPanel() {
           </section>
 
           <section className="admin-settings-section">
-            <h2>אחר</h2>
+            <h2>רשימת המתנה</h2>
             <label className="admin-check">
               <input
                 type="checkbox"
@@ -361,6 +366,15 @@ export function SettingsPanel() {
               />
               <span>רשימת המתנה פעילה</span>
             </label>
+            <p className="admin-hint">
+              כשהרשימה כבויה — הטאב &quot;רשימת המתנה&quot; מוסתר מהתפריט.
+              {settings.waitlist_enabled ? (
+                <>
+                  {" "}
+                  <a href="/admin/waitlist">ניהול רשימת המתנה</a>
+                </>
+              ) : null}
+            </p>
           </section>
 
           <button type="submit" className="admin-btn-primary" disabled={saving}>
@@ -454,41 +468,57 @@ export function SettingsPanel() {
       ) : null}
 
       {tab === "password" ? (
-        <div className="admin-card admin-form">
-          <p className="admin-hint">שינוי סיסמת מנהל באמצעות קוד OTP למייל הבעלים.</p>
-          {pwStep === "request" ? (
-            <button
-              type="button"
-              className="admin-btn-primary"
-              disabled={saving}
-              onClick={() => void requestOtp()}
-            >
-              {saving ? "שולח…" : "שלחו קוד למייל"}
-            </button>
-          ) : (
-            <>
-              <label>
-                <span>קוד בן 6 ספרות</span>
-                <input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" />
-              </label>
-              <label>
-                <span>סיסמה חדשה (8+)</span>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </label>
+        <div className="admin-settings-stack">
+          <div className="admin-card admin-form">
+            <h2 className="admin-settings-card-title">שינוי סיסמה</h2>
+            <p className="admin-hint">שינוי סיסמת מנהל באמצעות קוד OTP למייל הבעלים.</p>
+            {pwStep === "request" ? (
               <button
                 type="button"
                 className="admin-btn-primary"
                 disabled={saving}
-                onClick={() => void confirmPassword()}
+                onClick={() => void requestOtp()}
               >
-                {saving ? "מעדכן…" : "עדכנו סיסמה"}
+                {saving ? "שולח…" : "שלחו קוד למייל"}
               </button>
-            </>
-          )}
+            ) : (
+              <>
+                <label>
+                  <span>קוד בן 6 ספרות</span>
+                  <input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" />
+                </label>
+                <label>
+                  <span>סיסמה חדשה (8+)</span>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="admin-btn-primary"
+                  disabled={saving}
+                  onClick={() => void confirmPassword()}
+                >
+                  {saving ? "מעדכן…" : "עדכנו סיסמה"}
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="admin-card admin-form">
+            <h2 className="admin-settings-card-title">התנתקות</h2>
+            <p className="admin-hint">סיום הסשן הנוכחי וחזרה לדף הכניסה.</p>
+            <button
+              type="button"
+              className="admin-btn-danger"
+              disabled={saving}
+              onClick={() => void logout()}
+            >
+              התנתקות
+            </button>
+          </div>
         </div>
       ) : null}
     </div>
