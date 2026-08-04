@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { ShopSettings } from "@/lib/settings";
-import { DEFAULT_SETTINGS } from "@/lib/settings";
+import type { ShopSettings } from "@/lib/settings-shared";
+import { DEFAULT_SETTINGS } from "@/lib/settings-shared";
 
 const DEFAULTS: ShopSettings = { ...DEFAULT_SETTINGS };
 
