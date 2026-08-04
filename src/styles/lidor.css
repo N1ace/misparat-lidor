@@ -130,7 +130,7 @@ header.site nav.main{ justify-self:center; grid-column:2; }
 header.site .head-actions{ justify-self:end; grid-column:3; }
 header.site .menu-btn{ justify-self:end; grid-column:3; margin-inline-start:0; }
 header.site.solid{ background:rgba(15,22,19,.94); backdrop-filter:blur(8px); box-shadow:0 1px 0 var(--line); }
-.logo{ display:flex; min-block-size:44px; align-items:center; gap:.55rem; text-decoration:none; color:var(--ivory); font-family:var(--font-karantina),'Karantina', font-weight:700; font-size:1.9rem; line-height:1; }
+.logo{ display:flex; min-block-size:44px; align-items:center; gap:.55rem; text-decoration:none; color:var(--ivory); font-family:var(--font-karantina),'Karantina',cursive; font-weight:700; font-size:1.9rem; line-height:1; }
 .logo .icn{ inline-size:34px; block-size:34px; }
 nav.main{ display:none; gap:1.15rem; margin-inline-start:0; justify-content:center; flex-wrap:wrap; }
 nav.main a{ color:var(--ivory); text-decoration:none; font-weight:600; padding-block:.4rem; }
@@ -248,7 +248,7 @@ nav.main a:hover{ color:var(--brass-hi); }
   transform:translateY(-2.6rem); margin-block-end:-2.6rem;
 }
 .trust .cell{ background:var(--surface); padding:1.1rem .8rem; text-align:center; }
-.trust b{ display:block; font-family:var(--font-karantina),'Karantina', font-weight:700; font-size:2.1rem; color:var(--brass-hi); line-height:1; }
+.trust b{ display:block; font-family:var(--font-karantina),'Karantina',cursive; font-weight:700; font-size:2.1rem; color:var(--brass-hi); line-height:1; }
 .trust span{ color:var(--muted); font-size:.92rem; }
 @media (min-width:768px){ .trust .wrap{ grid-template-columns:repeat(4,1fr); } }
 
@@ -287,7 +287,7 @@ nav.main a:hover{ color:var(--brass-hi); }
 .svc:hover{ border-color:var(--brass); }
 @media (prefers-reduced-motion: no-preference){ .svc:hover{ transform:translateY(-3px); } }
 .svc .top{ display:flex; align-items:center; justify-content:space-between; gap:1rem; }
-.svc .price{ font-family:var(--font-karantina),'Karantina', font-weight:700; font-size:2rem; color:var(--brass-hi); }
+.svc .price{ font-family:var(--font-karantina),'Karantina',cursive; font-weight:700; font-size:2rem; color:var(--brass-hi); }
 .svc p{ color:var(--muted); margin:0; font-size:.98rem; flex:1; }
 .svc .meta{ color:var(--muted); font-size:.9rem; }
 .svc .book-link{ font-weight:700; text-decoration:none; align-self:flex-start; min-block-size:44px; display:inline-flex; align-items:center; }
@@ -300,7 +300,7 @@ nav.main a:hover{ color:var(--brass-hi); }
 .why li .n{
   flex:none; inline-size:40px; block-size:40px; border-radius:50%;
   border:2px solid var(--brass); color:var(--brass-hi); display:grid; place-items:center;
-  font-family:var(--font-karantina),'Karantina', font-weight:700; font-size:1.4rem;
+  font-family:var(--font-karantina),'Karantina',cursive; font-weight:700; font-size:1.4rem;
 }
 .why li b{ display:block; font-size:1.1rem; }
 .why li span{ color:var(--muted); }
@@ -341,7 +341,7 @@ nav.main a:hover{ color:var(--brass-hi); }
 .booking{ background:var(--surface); border-block:1px solid var(--line); }
 .step{ margin-block-end:1.8rem; }
 .step > .lbl{ display:flex; align-items:baseline; gap:.6rem; margin-block-end:.7rem; font-weight:700; font-size:1.1rem; position:relative; }
-.step > .lbl .no{ color:var(--brass); font-family:var(--font-karantina),'Karantina', font-size:1.5rem; }
+.step > .lbl .no{ color:var(--brass); font-family:var(--font-karantina),'Karantina',cursive; font-size:1.5rem; }
 .step.needs-fix > .lbl{ color:#F0B9B1; }
 .step.needs-fix > .lbl::before{
   content:""; position:absolute; inset-inline-start:-.85rem; inset-block:.15rem .2rem;
@@ -410,7 +410,7 @@ input[type=tel]{ direction:ltr; text-align:end; } /* phone stays LTR inside RTL 
   gap:1rem; padding-block:1.1rem; font-weight:700; font-size:1.1rem; min-block-size:44px;
 }
 .faq summary::-webkit-details-marker{ display:none; }
-.faq summary::after{ content:"+"; font-family:var(--font-karantina),'Karantina', font-size:1.8rem; color:var(--brass); flex:none; transition:transform .2s; }
+.faq summary::after{ content:"+"; font-family:var(--font-karantina),'Karantina',cursive; font-size:1.8rem; color:var(--brass); flex:none; transition:transform .2s; }
 .faq details[open] summary::after{ transform:rotate(45deg); }
 .faq details > p{ color:var(--muted); padding-block-end:1.2rem; margin:0; max-inline-size:65ch; }
 

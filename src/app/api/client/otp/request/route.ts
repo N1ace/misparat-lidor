@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   const phone = normalizePhoneIL(body.phone);
   if (!phone) return NextResponse.json({ error: "טלפון לא תקין" }, { status: 400 });
 
-  let email: string | null = body.email?.trim() ? body.email.trim().toLowerCase() : null;
+  const email: string | null = body.email?.trim() ? body.email.trim().toLowerCase() : null;
   if (body.channel === "email") {
     if (!email || !isValidEmail(email)) {
       return NextResponse.json({ error: "אימייל נדרש לקבלת קוד במייל" }, { status: 400 });

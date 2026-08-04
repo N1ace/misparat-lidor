@@ -16,11 +16,11 @@ export function SiteFooter() {
             </p>
           </div>
           <nav aria-label="ניווט תחתון">
-            <a href="/#services">מחירון</a>
-            <a href="/#our-shop">המספרה</a>
-            <a href="/#gallery">עבודות</a>
-            <a href="/#faq">שאלות נפוצות</a>
-            <a href="/#location">איפה אנחנו</a>
+            <Link href="/#services">מחירון</Link>
+            <Link href="/#our-shop">המספרה</Link>
+            <Link href="/#gallery">עבודות</Link>
+            <Link href="/#faq">שאלות נפוצות</Link>
+            <Link href="/#location">איפה אנחנו</Link>
             <Link href="/booking">קביעת תור</Link>
           </nav>
           <div className="footer-aside">
