@@ -11,6 +11,7 @@ export type ShopSettings = {
   lead_minutes: number;
   slot_step_minutes: number;
   buffer_minutes: number;
+  reminder_hours_before: number;
   notify_confirmation: boolean;
   notify_reminder: boolean;
   notify_cancellation: boolean;
@@ -28,6 +29,7 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   lead_minutes: 30,
   slot_step_minutes: 15,
   buffer_minutes: 0,
+  reminder_hours_before: 24,
   notify_confirmation: true,
   notify_reminder: true,
   notify_cancellation: true,
@@ -41,6 +43,7 @@ export async function getShopSettings(): Promise<ShopSettings> {
       select business_name, business_phone, business_address, owner_email,
              online_booking_horizon_days, manual_booking_horizon_days,
              min_client_cancel_minutes, lead_minutes, slot_step_minutes, buffer_minutes,
+             reminder_hours_before,
              notify_confirmation, notify_reminder, notify_cancellation, waitlist_enabled
       from shop_settings where id = 1
     `;
@@ -60,12 +63,12 @@ export async function updateShopSettings(
     insert into shop_settings (
       id, business_name, business_phone, business_address, owner_email,
       online_booking_horizon_days, manual_booking_horizon_days, min_client_cancel_minutes,
-      lead_minutes, slot_step_minutes, buffer_minutes,
+      lead_minutes, slot_step_minutes, buffer_minutes, reminder_hours_before,
       notify_confirmation, notify_reminder, notify_cancellation, waitlist_enabled, updated_at
     ) values (
       1, ${next.business_name}, ${next.business_phone}, ${next.business_address}, ${next.owner_email},
       ${next.online_booking_horizon_days}, ${next.manual_booking_horizon_days}, ${next.min_client_cancel_minutes},
-      ${next.lead_minutes}, ${next.slot_step_minutes}, ${next.buffer_minutes},
+      ${next.lead_minutes}, ${next.slot_step_minutes}, ${next.buffer_minutes}, ${next.reminder_hours_before},
       ${next.notify_confirmation}, ${next.notify_reminder}, ${next.notify_cancellation}, ${next.waitlist_enabled},
       now()
     )
@@ -80,6 +83,7 @@ export async function updateShopSettings(
       lead_minutes = excluded.lead_minutes,
       slot_step_minutes = excluded.slot_step_minutes,
       buffer_minutes = excluded.buffer_minutes,
+      reminder_hours_before = excluded.reminder_hours_before,
       notify_confirmation = excluded.notify_confirmation,
       notify_reminder = excluded.notify_reminder,
       notify_cancellation = excluded.notify_cancellation,

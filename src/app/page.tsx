@@ -14,6 +14,7 @@ type Service = {
   name: string;
   duration_minutes: number;
   price_agorot: number;
+  image_path: string | null;
 };
 
 const SVC_ICONS = ["i-cut", "i-beard", "i-stylist", "i-comb", "i-brush", "i-razor"] as const;
@@ -26,7 +27,7 @@ async function loadServices(): Promise<Service[]> {
   try {
     const sql = getSql();
     return await sql<Service[]>`
-      select id, name, duration_minutes, price_agorot
+      select id, name, duration_minutes, price_agorot, image_path
       from services where active = true
       order by sort_order, name
     `;
@@ -213,6 +214,10 @@ export default async function HomePage() {
                   data-reveal
                   style={{ ["--i" as string]: i }}
                 >
+                  {s.image_path ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img className="svc-photo" src={s.image_path} alt="" />
+                  ) : null}
                   <div className="top">
                     <span className={`icn ${SVC_ICONS[i % SVC_ICONS.length]}`} aria-hidden="true" />
                     <span className="price">

@@ -1,10 +1,19 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { DAY_NAMES, HOURS } from "@/lib/shop";
+import { formatInTimeZone } from "date-fns-tz";
+import { DAY_NAMES, HOURS, TZ } from "@/lib/shop";
 
 type DayWin = { open: string; close: string; openMins: number; closeMins: number };
 type ByDay = Record<number, DayWin[]>;
+
+type Closure = {
+  id: string;
+  reason: string | null;
+  all_day: boolean;
+  start: string;
+  end: string;
+};
 
 function fallbackByDay(): ByDay {
   const out: ByDay = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
@@ -13,8 +22,8 @@ function fallbackByDay(): ByDay {
     if (!h) continue;
     out[d] = [
       {
-        open: `${Math.floor(h[0] / 60)}:${String(h[0] % 60).padStart(2, "0")}`,
-        close: `${Math.floor(h[1] / 60)}:${String(h[1] % 60).padStart(2, "0")}`,
+        open: `${String(Math.floor(h[0] / 60)).padStart(2, "0")}:${String(h[0] % 60).padStart(2, "0")}`,
+        close: `${String(Math.floor(h[1] / 60)).padStart(2, "0")}:${String(h[1] % 60).padStart(2, "0")}`,
         openMins: h[0],
         closeMins: h[1],
       },
@@ -26,7 +35,7 @@ function fallbackByDay(): ByDay {
 function fmtMins(m: number) {
   const h = Math.floor(m / 60);
   const min = m % 60;
-  return `${h}:${String(min).padStart(2, "0")}`;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
 function joinWindows(wins: DayWin[]): ReactNode {
@@ -41,19 +50,32 @@ function joinWindows(wins: DayWin[]): ReactNode {
   ));
 }
 
+function closureLabel(c: Closure) {
+  const reason = c.reason || (c.all_day ? "סגירה" : "שעות חלקיות");
+  if (c.all_day) {
+    const start = formatInTimeZone(c.start, TZ, "d/M");
+    const end = formatInTimeZone(c.end, TZ, "d/M");
+    return start === end ? `${reason} · ${start}` : `${reason} · ${start}–${end}`;
+  }
+  return `${reason} · ${formatInTimeZone(c.start, TZ, "d/M HH:mm")}–${formatInTimeZone(c.end, TZ, "HH:mm")}`;
+}
+
 export function HoursDropdown({ className = "" }: { className?: string }) {
   const [open, setOpen] = useState(false);
   const [day, setDay] = useState(0);
   const [byDay, setByDay] = useState<ByDay>(fallbackByDay);
+  const [closures, setClosures] = useState<Closure[]>([]);
 
   useEffect(() => {
     setDay(new Date().getDay());
     let cancelled = false;
-    fetch("/api/hours")
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled || !data?.byDay) return;
-        setByDay(data.byDay);
+    Promise.all([fetch("/api/hours"), fetch("/api/closures")])
+      .then(async ([hoursRes, closuresRes]) => {
+        const hoursData = await hoursRes.json().catch(() => null);
+        const closuresData = await closuresRes.json().catch(() => null);
+        if (cancelled) return;
+        if (hoursData?.byDay) setByDay(hoursData.byDay);
+        if (Array.isArray(closuresData?.closures)) setClosures(closuresData.closures);
       })
       .catch(() => {
         /* keep fallback */
@@ -87,20 +109,32 @@ export function HoursDropdown({ className = "" }: { className?: string }) {
         </span>
       </button>
       {open ? (
-        <table className="hours hours-dd-table">
-          <tbody>
-            {DAY_NAMES.map((name, d) => {
-              const wins = byDay[d] || [];
-              const parts = joinWindows(wins);
-              return (
-                <tr key={d} data-day={d} className={d === day ? "today" : undefined}>
-                  <th scope="row">{name}</th>
-                  <td>{parts || "סגור"}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="hours-dd-panel">
+          <table className="hours hours-dd-table">
+            <tbody>
+              {DAY_NAMES.map((name, d) => {
+                const wins = byDay[d] || [];
+                const parts = joinWindows(wins);
+                return (
+                  <tr key={d} data-day={d} className={d === day ? "today" : undefined}>
+                    <th scope="row">{name}</th>
+                    <td>{parts || "סגור"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {closures.length ? (
+            <div className="hours-closures">
+              <strong>סגירות וחופשות קרובות</strong>
+              <ul>
+                {closures.slice(0, 8).map((c) => (
+                  <li key={c.id}>{closureLabel(c)}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { autoCompletePastAppointments } from "@/lib/appointments-auto";
 import { getSql } from "@/lib/db";
 import { getSmsProvider } from "@/lib/sms";
 import { getEmailProvider } from "@/lib/email";
@@ -24,6 +25,8 @@ export async function POST(req: NextRequest) {
   const sql = getSql();
   const sms = getSmsProvider();
   const email = getEmailProvider();
+
+  const autoCompleted = await autoCompletePastAppointments();
 
   let sent = 0;
   let failed = 0;
@@ -78,5 +81,5 @@ export async function POST(req: NextRequest) {
     }
   });
 
-  return NextResponse.json({ sent, failed, skipped, processed });
+  return NextResponse.json({ sent, failed, skipped, processed, autoCompleted });
 }

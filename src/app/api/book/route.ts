@@ -111,7 +111,9 @@ export async function POST(req: NextRequest) {
     cancelUrl,
   });
 
-  const reminderAt = new Date(start.getTime() - 24 * 60 * 60 * 1000);
+  const reminderAt = new Date(
+    start.getTime() - settings.reminder_hours_before * 60 * 60 * 1000,
+  );
   const reminderSend = reminderAt < new Date() ? new Date() : reminderAt;
 
   try {

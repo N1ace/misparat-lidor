@@ -59,14 +59,25 @@ export async function POST(req: NextRequest) {
     name?: string;
     duration_minutes?: number;
     price_agorot?: number;
+    sort_order?: number;
+    active?: boolean;
+    image_path?: string | null;
   };
-  if (!body.name || !body.duration_minutes) {
+  if (!body.name?.trim() || !body.duration_minutes) {
     return NextResponse.json({ error: "חסרים שדות" }, { status: 400 });
   }
+  const imagePath = body.image_path?.trim() ? body.image_path.trim() : null;
   const sql = getSql();
   const [row] = await sql`
-    insert into services (name, duration_minutes, price_agorot)
-    values (${body.name}, ${body.duration_minutes}, ${body.price_agorot ?? 0})
+    insert into services (name, duration_minutes, price_agorot, sort_order, active, image_path)
+    values (
+      ${body.name.trim()},
+      ${body.duration_minutes},
+      ${body.price_agorot ?? 0},
+      ${body.sort_order ?? 0},
+      ${body.active ?? true},
+      ${imagePath}
+    )
     returning id
   `;
   return NextResponse.json({ ok: true, id: row.id });

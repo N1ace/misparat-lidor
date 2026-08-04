@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readSession } from "@/lib/auth";
+import { autoCompletePastAppointments } from "@/lib/appointments-auto";
 import { getSql } from "@/lib/db";
 import { normalizePhoneIL, isValidEmail } from "@/lib/phone";
 import { smsConfirmation, smsReminder, emailConfirmation, emailReminder, smsReschedule, emailReschedule } from "@/lib/messages";
@@ -37,6 +38,8 @@ export async function GET(req: NextRequest) {
   if (!fromYmd || !toYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fromYmd) || !/^\d{4}-\d{2}-\d{2}$/.test(toYmd)) {
     return NextResponse.json({ error: "טווח תאריכים חסר" }, { status: 400 });
   }
+
+  await autoCompletePastAppointments();
 
   const sql = getSql();
   const from = wallTimeToUtc(fromYmd, "00:00:00");
@@ -335,7 +338,9 @@ export async function POST(req: NextRequest) {
   const cancelToken = crypto.randomUUID();
   const origin = req.nextUrl.origin;
   const cancelUrl = `${origin}/cancel/${cancelToken}`;
-  const reminderAt = new Date(start.getTime() - 24 * 60 * 60 * 1000);
+  const reminderAt = new Date(
+    start.getTime() - settings.reminder_hours_before * 60 * 60 * 1000,
+  );
   const reminderSend = reminderAt < new Date() ? new Date() : reminderAt;
 
   const clientName = body.name;

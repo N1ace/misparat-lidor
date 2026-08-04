@@ -113,6 +113,7 @@ export function BookingFlow({
   const [slot, setSlot] = useState<string | null>(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [openDays, setOpenDays] = useState<Set<number> | null>(null);
+  const [closedYmds, setClosedYmds] = useState<Set<string>>(new Set());
   const [client, setClient] = useState<ClientInfo | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -149,20 +150,35 @@ export function BookingFlow({
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/hours")
-      .then((r) => r.json())
-      .then((data) => {
+    Promise.all([fetch("/api/hours"), fetch("/api/closures")])
+      .then(async ([hoursRes, closuresRes]) => {
+        const data = await hoursRes.json().catch(() => null);
+        const closuresData = await closuresRes.json().catch(() => null);
         if (cancelled) return;
-        const byDay = data.byDay as Record<string, unknown[]> | undefined;
+        const byDay = data?.byDay as Record<string, unknown[]> | undefined;
         if (!byDay) {
           setOpenDays(new Set([0, 1, 2, 3, 4, 5]));
-          return;
+        } else {
+          const open = new Set<number>();
+          for (let d = 0; d <= 6; d++) {
+            if (Array.isArray(byDay[d]) && byDay[d].length > 0) open.add(d);
+          }
+          setOpenDays(open);
         }
-        const open = new Set<number>();
-        for (let d = 0; d <= 6; d++) {
-          if (Array.isArray(byDay[d]) && byDay[d].length > 0) open.add(d);
+        const closed = new Set<string>();
+        for (const c of closuresData?.closures || []) {
+          if (!c.all_day) continue;
+          const start = formatInTimeZone(c.start, "Asia/Jerusalem", "yyyy-MM-dd");
+          const end = formatInTimeZone(c.end, "Asia/Jerusalem", "yyyy-MM-dd");
+          let cur = start;
+          while (cur <= end) {
+            closed.add(cur);
+            const [y, m, d] = cur.split("-").map(Number);
+            const next = new Date(y, m - 1, d + 1);
+            cur = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+          }
         }
-        setOpenDays(open);
+        setClosedYmds(closed);
       })
       .catch(() => setOpenDays(new Set([0, 1, 2, 3, 4, 5])));
     return () => {
@@ -173,12 +189,13 @@ export function BookingFlow({
   const isSelectableDay = useCallback(
     (ymd: string) => {
       if (ymd < todayYmd || ymd > horizonEnd) return false;
+      if (closedYmds.has(ymd)) return false;
       const [y, m, d] = ymd.split("-").map(Number);
       const dow = new Date(y, m - 1, d).getDay();
       if (openDays && !openDays.has(dow)) return false;
       return true;
     },
-    [todayYmd, horizonEnd, openDays],
+    [todayYmd, horizonEnd, openDays, closedYmds],
   );
 
   useEffect(() => {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readSession } from "@/lib/auth";
 import { getSql } from "@/lib/db";
+import { autoCompletePastAppointments } from "@/lib/appointments-auto";
+import { computeReliability, type ReliabilityStat } from "@/lib/client-reliability";
 import { normalizePhoneIL, isValidEmail } from "@/lib/phone";
 
 export const runtime = "nodejs";
@@ -10,29 +12,62 @@ async function guard() {
   return null;
 }
 
+type ClientRow = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  notes: string | null;
+  notify_channel: string | null;
+  created_at: Date;
+  updated_at: Date;
+};
+
+async function withReliability(clients: ClientRow[]) {
+  if (!clients.length) return [];
+  const sql = getSql();
+  const phones = clients.map((c) => c.phone);
+  const appts = await sql<{ client_phone: string; status: string }[]>`
+    select client_phone, status
+    from appointments
+    where client_phone = any(${phones})
+  `;
+  const byPhone = new Map<string, { status: string }[]>();
+  for (const a of appts) {
+    const list = byPhone.get(a.client_phone) || [];
+    list.push({ status: a.status });
+    byPhone.set(a.client_phone, list);
+  }
+  return clients.map((c) => {
+    const reliability: ReliabilityStat = computeReliability(byPhone.get(c.phone) || []);
+    return { ...c, reliability };
+  });
+}
+
 export async function GET(req: NextRequest) {
   const denied = await guard();
   if (denied) return denied;
+  await autoCompletePastAppointments();
   const q = (req.nextUrl.searchParams.get("q") || "").trim();
   const sql = getSql();
   if (q) {
     const like = `%${q}%`;
-    const clients = await sql`
-      select id, name, phone, email, notes, created_at, updated_at
+    const clients = await sql<ClientRow[]>`
+      select id, name, phone, email, notes, notify_channel, created_at, updated_at
       from clients
       where name ilike ${like} or phone ilike ${like} or coalesce(email,'') ilike ${like}
       order by updated_at desc
       limit 200
     `;
-    return NextResponse.json({ clients });
+    return NextResponse.json({ clients: await withReliability(clients) });
   }
-  const clients = await sql`
-    select id, name, phone, email, notes, created_at, updated_at
+  const clients = await sql<ClientRow[]>`
+    select id, name, phone, email, notes, notify_channel, created_at, updated_at
     from clients
     order by updated_at desc
     limit 200
   `;
-  return NextResponse.json({ clients });
+  return NextResponse.json({ clients: await withReliability(clients) });
 }
 
 export async function POST(req: NextRequest) {

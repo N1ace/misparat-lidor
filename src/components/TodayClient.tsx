@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { formatInTimeZone } from "date-fns-tz";
+import { TimeSelect24 } from "@/components/TimeSelect24";
 
 type Appt = {
   id: string;
@@ -121,8 +122,8 @@ export function TodayClient({
       {showBlock && (
         <div className="space-y-2 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4">
           <div className="flex gap-2">
-            <input type="time" value={blockStart} onChange={(e) => setBlockStart(e.target.value)} className="rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
-            <input type="time" value={blockEnd} onChange={(e) => setBlockEnd(e.target.value)} className="rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
+            <TimeSelect24 value={blockStart} onChange={setBlockStart} className="rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
+            <TimeSelect24 value={blockEnd} onChange={setBlockEnd} className="rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
           </div>
           <input
             value={blockReason}
@@ -145,7 +146,7 @@ export function TodayClient({
               </option>
             ))}
           </select>
-          <input type="time" value={addTime} onChange={(e) => setAddTime(e.target.value)} className="rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
+          <TimeSelect24 value={addTime} onChange={setAddTime} className="rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 w-full" />
           <input value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="שם" className="w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
           <input value={addPhone} onChange={(e) => setAddPhone(e.target.value)} placeholder="טלפון" className="w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
           <button type="button" onClick={addWalkIn} className="rounded-xl bg-[var(--accent)] px-4 py-2 font-bold text-[#1a0f0a]">

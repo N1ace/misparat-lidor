@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatInTimeZone } from "date-fns-tz";
 import { TZ } from "@/lib/shop";
+import { TimeSelect24 } from "@/components/TimeSelect24";
 
 type Service = {
   id: string;
@@ -637,7 +638,7 @@ export function CalendarPlanner({ services }: { services: Service[] }) {
               </label>
               <label>
                 <span>שעה</span>
-                <input type="time" required value={addTime} onChange={(e) => setAddTime(e.target.value)} step={900} />
+                <TimeSelect24 required value={addTime} onChange={setAddTime} stepMinutes={15} />
               </label>
               <label>
                 <span>שירות</span>

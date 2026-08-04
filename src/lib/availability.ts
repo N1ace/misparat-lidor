@@ -116,7 +116,8 @@ export async function getAvailableSlots(
   const busyWithBuffer =
     bufferMinutes > 0
       ? busy.map((b) => ({
-          start: new Date(b.start.getTime() - bufferMinutes * 60_000),
+          start: b.start,
+          // Cleanup time is added after each booking and blocks the calendar
           end: new Date(b.end.getTime() + bufferMinutes * 60_000),
         }))
       : busy;

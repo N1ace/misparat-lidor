@@ -7,7 +7,7 @@ import { SHOP } from "@/lib/shop";
 type NavItem = {
   href: string;
   label: string;
-  icon: "grid" | "calendar" | "users" | "sparkles" | "block" | "list" | "gear";
+  icon: "grid" | "calendar" | "users" | "sparkles" | "block" | "list" | "gear" | "clock";
 };
 
 const PRIMARY: NavItem[] = [
@@ -18,6 +18,7 @@ const PRIMARY: NavItem[] = [
 
 const MANAGE: NavItem[] = [
   { href: "/admin/services", label: "שירותים", icon: "sparkles" },
+  { href: "/admin/hours", label: "שעות פעילות", icon: "clock" },
   { href: "/admin/closures", label: "סגירות וחופשות", icon: "block" },
   { href: "/admin/waitlist", label: "רשימת המתנה", icon: "list" },
 ];
@@ -79,6 +80,13 @@ function Icon({ name }: { name: NavItem["icon"] }) {
       return (
         <svg {...common}>
           <path d="M8 7h12M8 12h12M8 17h12M4 7h.01M4 12h.01M4 17h.01" />
+        </svg>
+      );
+    case "clock":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
         </svg>
       );
     case "gear":

@@ -28,6 +28,7 @@ export async function PATCH(req: NextRequest) {
     "lead_minutes",
     "slot_step_minutes",
     "buffer_minutes",
+    "reminder_hours_before",
     "notify_confirmation",
     "notify_reminder",
     "notify_cancellation",

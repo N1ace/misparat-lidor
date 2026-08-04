@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { ShopSettings } from "@/lib/settings";
 
 const DEFAULTS: ShopSettings = {
@@ -14,6 +14,7 @@ const DEFAULTS: ShopSettings = {
   lead_minutes: 30,
   slot_step_minutes: 15,
   buffer_minutes: 0,
+  reminder_hours_before: 24,
   notify_confirmation: true,
   notify_reminder: true,
   notify_cancellation: true,
@@ -28,6 +29,24 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "notifications", label: "התראות" },
   { id: "password", label: "סיסמה" },
 ];
+
+function SettingField({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="admin-setting-field">
+      <span className="admin-setting-label">{label}</span>
+      {hint ? <span className="admin-setting-hint">{hint}</span> : null}
+      {children}
+    </label>
+  );
+}
 
 export function SettingsPanel() {
   const [tab, setTab] = useState<Tab>("business");
@@ -180,6 +199,10 @@ export function SettingsPanel() {
             });
           }}
         >
+          <p className="admin-hint" style={{ marginTop: 0 }}>
+            שעות פתיחה שבועיות נערכות במסך{" "}
+            <a href="/admin/hours">שעות פעילות</a> — ומתעדכנות אוטומטית באתר.
+          </p>
           <label>
             <span>שם העסק</span>
             <input
@@ -231,83 +254,115 @@ export function SettingsPanel() {
             });
           }}
         >
-          <label>
-            <span>אופק הזמנה אונליין (ימים)</span>
-            <input
-              type="number"
-              min={1}
-              max={365}
-              value={settings.online_booking_horizon_days}
-              onChange={(e) =>
-                setSettings({ ...settings, online_booking_horizon_days: Number(e.target.value) })
-              }
-            />
-          </label>
-          <label>
-            <span>אופק הזמנה ידנית (ימים)</span>
-            <input
-              type="number"
-              min={1}
-              max={730}
-              value={settings.manual_booking_horizon_days}
-              onChange={(e) =>
-                setSettings({ ...settings, manual_booking_horizon_days: Number(e.target.value) })
-              }
-            />
-          </label>
-          <label>
-            <span>חלון ביטול מינימלי ללקוח (דקות)</span>
-            <input
-              type="number"
-              min={0}
-              max={10080}
-              value={settings.min_client_cancel_minutes}
-              onChange={(e) =>
-                setSettings({ ...settings, min_client_cancel_minutes: Number(e.target.value) })
-              }
-            />
-          </label>
-          <label>
-            <span>זמן הובלה (דקות לפני תור)</span>
-            <input
-              type="number"
-              min={0}
-              max={1440}
-              value={settings.lead_minutes}
-              onChange={(e) => setSettings({ ...settings, lead_minutes: Number(e.target.value) })}
-            />
-          </label>
-          <label>
-            <span>מרווח סלוטים (דקות)</span>
-            <select
-              value={settings.slot_step_minutes}
-              onChange={(e) => setSettings({ ...settings, slot_step_minutes: Number(e.target.value) })}
+          <section className="admin-settings-section">
+            <h2>קביעת תורים</h2>
+            <SettingField
+              label="עד כמה קדימה לקוח יכול לקבוע (ימים)"
+              hint="תאריכים רחוקים יותר לא יופיעו ביומן הציבורי."
             >
-              {[5, 10, 15, 20, 30, 60].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>באפר בין תורים (דקות)</span>
-            <input
-              type="number"
-              min={0}
-              max={120}
-              value={settings.buffer_minutes}
-              onChange={(e) => setSettings({ ...settings, buffer_minutes: Number(e.target.value) })}
-            />
-          </label>
-          <label className="admin-check">
-            <input
-              type="checkbox"
-              checked={settings.waitlist_enabled}
-              onChange={(e) => setSettings({ ...settings, waitlist_enabled: e.target.checked })}
-            />
-            <span>רשימת המתנה פעילה</span>
-          </label>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={settings.online_booking_horizon_days}
+                onChange={(e) =>
+                  setSettings({ ...settings, online_booking_horizon_days: Number(e.target.value) })
+                }
+              />
+            </SettingField>
+            <SettingField
+              label="עד כמה קדימה אתה יכול לקבוע (ימים)"
+              hint="חל רק על קביעה ידנית מהניהול."
+            >
+              <input
+                type="number"
+                min={1}
+                max={730}
+                value={settings.manual_booking_horizon_days}
+                onChange={(e) =>
+                  setSettings({ ...settings, manual_booking_horizon_days: Number(e.target.value) })
+                }
+              />
+            </SettingField>
+            <SettingField
+              label="זמן מינימלי לפני התור לקביעה (דקות)"
+              hint="לקוח לא יוכל לתפוס תור שמתחיל בעוד פחות מזה. קביעה ידנית שלך תמיד עוקפת."
+            >
+              <input
+                type="number"
+                min={0}
+                max={1440}
+                value={settings.lead_minutes}
+                onChange={(e) => setSettings({ ...settings, lead_minutes: Number(e.target.value) })}
+              />
+            </SettingField>
+          </section>
+
+          <section className="admin-settings-section">
+            <h2>ביטולים</h2>
+            <SettingField
+              label="עד מתי לקוח יכול לבטל (דקות לפני התור)"
+              hint="אחרי זה קישור הביטול מציג את מספר הטלפון שלך במקום כפתור."
+            >
+              <input
+                type="number"
+                min={0}
+                max={10080}
+                value={settings.min_client_cancel_minutes}
+                onChange={(e) =>
+                  setSettings({ ...settings, min_client_cancel_minutes: Number(e.target.value) })
+                }
+              />
+            </SettingField>
+          </section>
+
+          <section className="admin-settings-section">
+            <h2>מבנה היומן</h2>
+            <SettingField
+              label="כל כמה זמן מוצע תור (דקות)"
+              hint="קובע את השעות שהלקוח רואה: 15 → 9:00, 9:15, 9:30. לא משך התור."
+            >
+              <select
+                value={settings.slot_step_minutes}
+                onChange={(e) =>
+                  setSettings({ ...settings, slot_step_minutes: Number(e.target.value) })
+                }
+              >
+                {[5, 10, 15, 20, 30, 60].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </SettingField>
+            <SettingField
+              label="זמן ניקיון בין תורים (דקות)"
+              hint="נוסף אחרי כל תור וחוסם את היומן."
+            >
+              <input
+                type="number"
+                min={0}
+                max={120}
+                value={settings.buffer_minutes}
+                onChange={(e) =>
+                  setSettings({ ...settings, buffer_minutes: Number(e.target.value) })
+                }
+              />
+            </SettingField>
+          </section>
+
+          <section className="admin-settings-section">
+            <h2>אחר</h2>
+            <label className="admin-check">
+              <input
+                type="checkbox"
+                checked={settings.waitlist_enabled}
+                onChange={(e) => setSettings({ ...settings, waitlist_enabled: e.target.checked })}
+              />
+              <span>רשימת המתנה פעילה</span>
+            </label>
+          </section>
+
           <button type="submit" className="admin-btn-primary" disabled={saving}>
             {saving ? "שומר…" : "שמור"}
           </button>
@@ -315,60 +370,99 @@ export function SettingsPanel() {
       ) : null}
 
       {tab === "notifications" ? (
-        <form
-          className="admin-card admin-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void save({
-              notify_confirmation: settings.notify_confirmation,
-              notify_reminder: settings.notify_reminder,
-              notify_cancellation: settings.notify_cancellation,
-            });
-          }}
-        >
-          <label className="admin-check">
-            <input
-              type="checkbox"
-              checked={settings.notify_confirmation}
-              onChange={(e) => setSettings({ ...settings, notify_confirmation: e.target.checked })}
-            />
-            <span>אישור תור</span>
-          </label>
-          <label className="admin-check">
-            <input
-              type="checkbox"
-              checked={settings.notify_reminder}
-              onChange={(e) => setSettings({ ...settings, notify_reminder: e.target.checked })}
-            />
-            <span>תזכורת</span>
-          </label>
-          <label className="admin-check">
-            <input
-              type="checkbox"
-              checked={settings.notify_cancellation}
-              onChange={(e) => setSettings({ ...settings, notify_cancellation: e.target.checked })}
-            />
-            <span>ביטול</span>
-          </label>
-          <p className="admin-hint">
-            ערוץ ההתראה (SMS או אימייל) נקבע לכל לקוח בנפרד באזור האישי שלו.
-            ביטול מצד הלקוח אינו שולח הודעת ביטול; שינוי מועד מצד המנהל כן שולח עדכון.
-          </p>
-          <p className="admin-hint">
-            תבניות ההודעות ניתנות לעריכה ב־
-            <a href="/admin/messages">הודעות</a>.
-          </p>
-          <button type="submit" className="admin-btn-primary" disabled={saving}>
-            {saving ? "שומר…" : "שמור"}
-          </button>
-        </form>
+        <div className="admin-settings-stack">
+          <form
+            className="admin-card admin-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save({
+                notify_confirmation: settings.notify_confirmation,
+                notify_reminder: settings.notify_reminder,
+                notify_cancellation: settings.notify_cancellation,
+              });
+            }}
+          >
+            <h2 className="admin-settings-card-title">הודעות ללקוח</h2>
+            <label className="admin-check">
+              <input
+                type="checkbox"
+                checked={settings.notify_confirmation}
+                onChange={(e) =>
+                  setSettings({ ...settings, notify_confirmation: e.target.checked })
+                }
+              />
+              <span>אישור תור</span>
+            </label>
+            <label className="admin-check">
+              <input
+                type="checkbox"
+                checked={settings.notify_reminder}
+                onChange={(e) => setSettings({ ...settings, notify_reminder: e.target.checked })}
+              />
+              <span>תזכורת</span>
+            </label>
+            <label className="admin-check">
+              <input
+                type="checkbox"
+                checked={settings.notify_cancellation}
+                onChange={(e) =>
+                  setSettings({ ...settings, notify_cancellation: e.target.checked })
+                }
+              />
+              <span>ביטול (התראות מערכת / מנהל)</span>
+            </label>
+            <p className="admin-hint">
+              ערוץ ההתראה (SMS או אימייל) נקבע לכל לקוח בנפרד באזור האישי שלו. ביטול מצד הלקוח אינו
+              שולח הודעת ביטול; שינוי מועד מצד המנהל כן שולח עדכון.
+            </p>
+            <p className="admin-hint">
+              תבניות ההודעות ניתנות לעריכה ב־
+              <a href="/admin/messages">הודעות</a>.
+            </p>
+            <button type="submit" className="admin-btn-primary" disabled={saving}>
+              {saving ? "שומר…" : "שמור הודעות"}
+            </button>
+          </form>
+
+          <form
+            className="admin-card admin-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save({ reminder_hours_before: settings.reminder_hours_before });
+            }}
+          >
+            <h2 className="admin-settings-card-title">תזכורות</h2>
+            <SettingField
+              label="מתי לשלוח תזכורת (שעות לפני התור)"
+              hint="אם התזכורת מופעלת למעלה — תישלח לפי הערוץ המועדף של הלקוח."
+            >
+              <input
+                type="number"
+                min={1}
+                max={168}
+                value={settings.reminder_hours_before}
+                onChange={(e) =>
+                  setSettings({ ...settings, reminder_hours_before: Number(e.target.value) })
+                }
+              />
+            </SettingField>
+            <button type="submit" className="admin-btn-primary" disabled={saving}>
+              {saving ? "שומר…" : "שמור תזכורות"}
+            </button>
+          </form>
+        </div>
       ) : null}
 
       {tab === "password" ? (
         <div className="admin-card admin-form">
           <p className="admin-hint">שינוי סיסמת מנהל באמצעות קוד OTP למייל הבעלים.</p>
           {pwStep === "request" ? (
-            <button type="button" className="admin-btn-primary" disabled={saving} onClick={() => void requestOtp()}>
+            <button
+              type="button"
+              className="admin-btn-primary"
+              disabled={saving}
+              onClick={() => void requestOtp()}
+            >
               {saving ? "שולח…" : "שלחו קוד למייל"}
             </button>
           ) : (

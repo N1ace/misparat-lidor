@@ -283,6 +283,11 @@ nav.main a:hover{ color:var(--brass-hi); }
   background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
   padding:1.4rem; display:flex; flex-direction:column; gap:.7rem;
   transition:border-color .2s, transform .2s;
+  overflow:hidden;
+}
+.svc-photo{
+  width:calc(100% + 2.8rem); max-width:none; margin:-1.4rem -1.4rem 0;
+  aspect-ratio:16/10; object-fit:cover; display:block; background:#1a1610;
 }
 .svc:hover{ border-color:var(--brass); }
 @media (prefers-reduced-motion: no-preference){ .svc:hover{ transform:translateY(-3px); } }
@@ -796,9 +801,23 @@ footer .footer-legal a{ font-size:.92rem; justify-content:flex-start; }
   order:0;
 }
 .hours-dd.open .hours-dd-arrow{ transform:rotate(180deg); color:var(--brass-hi); }
+.hours-dd-panel{
+  margin:.45rem 0 0;
+}
 .hours-dd-table{
   margin:.45rem 0 0; border:none; background:transparent;
   max-inline-size:16rem;
+}
+.hours-closures{
+  margin-top:.75rem; padding-top:.65rem; border-top:1px solid rgba(255,255,255,.12);
+  max-inline-size:16rem;
+}
+.hours-closures strong{
+  display:block; font-size:.78rem; color:var(--brass); margin-bottom:.35rem; font-weight:700;
+}
+.hours-closures ul{
+  margin:0; padding:0; list-style:none; display:grid; gap:.28rem;
+  font-size:.82rem; color:var(--muted); line-height:1.35;
 }
 .hours-dd-table th, .hours-dd-table td{
   padding:.28rem 0; border-block-end:1px solid rgba(43,58,50,.55);
