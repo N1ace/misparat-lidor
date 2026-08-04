@@ -98,12 +98,14 @@ export function BookingFlow({
   horizonDays = 30,
   onOpenBookings,
   onBooked,
+  onClientAuthenticated,
 }: {
   services: BookingService[];
   initialService?: string;
   horizonDays?: number;
   onOpenBookings?: () => void;
   onBooked?: () => void;
+  onClientAuthenticated?: (client: ClientInfo) => void;
 }) {
   const preselected = resolveInitialService(services, initialService);
   const [step, setStep] = useState(preselected ? 2 : 1);
@@ -585,6 +587,7 @@ export function BookingFlow({
               setClient(c);
               setSkippedIdentity(false);
               setStep(4);
+              onClientAuthenticated?.(c);
             }}
           />
         </section>

@@ -213,50 +213,51 @@ export function ClientPortal({
     setMsg("התור בוטל");
   }
 
+  const onAuth = useCallback(
+    async (c: ClientInfo) => {
+      setClient(c);
+      setName(c.name);
+      setEmail(c.email || "");
+      setChannel(c.notify_channel);
+      await loadBookings();
+    },
+    [loadBookings],
+  );
+
   if (loading) {
     return <p className="bf-muted" style={{ textAlign: "center" }}>טוען…</p>;
   }
 
-  if (!client) {
-    return (
-      <div className="client-portal">
-        <header className="client-top">
-          <p className="client-brand">{SHOP.name}</p>
-          <p className="client-sub">{SHOP.addressShort}</p>
-        </header>
-        <div className="client-body">
-          <div className="account-gate">
-            <ClientIdentityForm
-              title="כניסה לקביעת תור"
-              submitLabel="המשך"
-              onAuthenticated={async (c) => {
-                setClient(c);
-                setName(c.name);
-                setEmail(c.email || "");
-                setChannel(c.notify_channel);
-                await loadBookings();
-              }}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const needsAuthGate = !client && (tab === "bookings" || tab === "settings");
 
   return (
     <div className="client-portal">
       <header className="client-top">
         <p className="client-brand">{SHOP.name}</p>
-        <h1 className="client-hello" title={client.name}>
-          שלום, {truncateLabel(client.name, NAME_LIMITS.person)}
-        </h1>
+        {client ? (
+          <h1 className="client-hello" title={client.name}>
+            שלום, {truncateLabel(client.name, NAME_LIMITS.person)}
+          </h1>
+        ) : (
+          <p className="client-sub">{SHOP.addressShort}</p>
+        )}
       </header>
 
       <div className="client-body">
         {msg && <p className="account-ok">{msg}</p>}
         {err && <p className="err">{err}</p>}
 
-        {tab === "new" && (
+        {needsAuthGate ? (
+          <div className="account-gate">
+            <ClientIdentityForm
+              title={tab === "bookings" ? "כניסה לצפייה בתורים" : "כניסה להגדרות"}
+              submitLabel="כניסה"
+              onAuthenticated={(c) => void onAuth(c)}
+            />
+          </div>
+        ) : null}
+
+        {!needsAuthGate && tab === "new" && (
           <div className="account-panel">
             {services.length === 0 ? (
               <p className="bf-muted">אין שירותים זמינים כרגע.</p>
@@ -265,6 +266,7 @@ export function ClientPortal({
                 services={services}
                 horizonDays={horizonDays}
                 initialService={initialService}
+                onClientAuthenticated={(c) => void onAuth(c)}
                 onBooked={() => {
                   void loadBookings();
                 }}
@@ -276,7 +278,7 @@ export function ClientPortal({
           </div>
         )}
 
-        {tab === "bookings" && (
+        {!needsAuthGate && tab === "bookings" && client && (
           <div className="account-panel">
             <h2>תורים קרובים</h2>
             {upcoming.length === 0 ? (
@@ -314,11 +316,11 @@ export function ClientPortal({
                   <li key={w.id}>
                     <div>
                       <strong>{w.service_name || "שירות כללי"}</strong>
-                    <p className="bf-muted">
-                      {w.preferred_date
-                        ? `תאריך יעד: ${String(w.preferred_date).slice(0, 10).split("-").reverse().join("/")}`
-                        : `סטטוס: ${w.status === "offered" ? "הוצע תור" : "ממתין"}`}
-                    </p>
+                      <p className="bf-muted">
+                        {w.preferred_date
+                          ? `תאריך יעד: ${String(w.preferred_date).slice(0, 10).split("-").reverse().join("/")}`
+                          : `סטטוס: ${w.status === "offered" ? "הוצע תור" : "ממתין"}`}
+                      </p>
                     </div>
                   </li>
                 ))}
@@ -352,7 +354,7 @@ export function ClientPortal({
           </div>
         )}
 
-        {tab === "settings" && (
+        {!needsAuthGate && tab === "settings" && client && (
           <form className="account-panel bf-identity" onSubmit={(e) => void saveSettings(e)}>
             <h2>הגדרות</h2>
             <label>
@@ -430,7 +432,7 @@ export function ClientPortal({
             className={tab === t.id ? "on" : undefined}
             onClick={() => {
               goTab(t.id);
-              if (t.id === "bookings") void loadBookings();
+              if (t.id === "bookings" && client) void loadBookings();
             }}
           >
             <TabIcon name={t.icon} />
