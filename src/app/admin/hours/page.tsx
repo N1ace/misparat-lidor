@@ -59,7 +59,6 @@ function windowsToDay(windows: { open_time: string; close_time: string }[]): Day
 
 export default function AdminHoursPage() {
   const [days, setDays] = useState<DayState[]>(emptyWeek);
-  const [openDay, setOpenDay] = useState<number | null>(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -151,6 +150,7 @@ export default function AdminHoursPage() {
         return;
       }
       setMsg("נשמר — השעות וההפסקות מתעדכנות באתר ובקביעת תור");
+      window.dispatchEvent(new Event("lidor:hours-changed"));
       await load();
     } catch {
       setError("שגיאת רשת");
@@ -167,7 +167,7 @@ export default function AdminHoursPage() {
         <div>
           <h1>שעות פעילות</h1>
           <p>
-            כרטיס לכל יום — פתיחה להגדרות. השעות בפורמט 24 שעות ומתעדכנות באתר ובקביעת תור.
+            מתג לכל יום — פתוח או סגור. השעות בפורמט 24 שעות ומתעדכנות באתר ובקביעת תור.
           </p>
         </div>
       </div>
@@ -178,93 +178,90 @@ export default function AdminHoursPage() {
       <div className="admin-hours-day-list">
         {DAY_NAMES.map((name, d) => {
           const day = days[d];
-          const expanded = openDay === d;
+          const isOpen = !day.closed;
+          const switchId = `hours-day-${d}`;
           return (
             <article
               key={name}
-              className={`admin-entity-card admin-hours-accordion${day.closed ? " inactive" : ""}${expanded ? " open" : ""}`}
+              className={`admin-entity-card admin-hours-day${day.closed ? " inactive" : ""}`}
             >
-              <button
-                type="button"
-                className="admin-hours-accordion-toggle"
-                aria-expanded={expanded}
-                onClick={() => setOpenDay(expanded ? null : d)}
-              >
-                <span>
+              <div className="admin-hours-day-head">
+                <div className="admin-hours-day-title">
                   <strong>{name}</strong>
                   <span className="admin-entity-meta" dir="ltr">
                     {daySummary(day)}
                   </span>
-                </span>
-                <span className="admin-hours-chevron" aria-hidden="true">
-                  {expanded ? "▴" : "▾"}
-                </span>
-              </button>
-
-              {expanded ? (
-                <div className="admin-hours-accordion-body">
-                  <label className="admin-check">
-                    <input
-                      type="checkbox"
-                      checked={!day.closed}
-                      onChange={(e) => patchDay(d, { closed: !e.target.checked })}
-                    />
-                    <span>{day.closed ? "סגור ביום זה" : "פתוח ביום זה"}</span>
-                  </label>
-
-                  {!day.closed ? (
-                    <>
-                      <div className="admin-hours-window">
-                        <label>
-                          <span>פתיחה</span>
-                          <TimeSelect24 value={day.open} onChange={(v) => patchDay(d, { open: v })} />
-                        </label>
-                        <label>
-                          <span>סגירה</span>
-                          <TimeSelect24 value={day.close} onChange={(v) => patchDay(d, { close: v })} />
-                        </label>
-                      </div>
-
-                      <label className="admin-check">
-                        <input
-                          type="checkbox"
-                          checked={day.breakOn}
-                          onChange={(e) => patchDay(d, { breakOn: e.target.checked })}
-                        />
-                        <span>הפסקה ביום זה</span>
-                      </label>
-
-                      {day.breakOn ? (
-                        <div className="admin-hours-break">
-                          <p className="admin-setting-hint" style={{ margin: 0 }}>
-                            בשעות ההפסקה לא יוצעו תורים באתר.
-                          </p>
-                          <div className="admin-hours-window">
-                            <label>
-                              <span>תחילת הפסקה</span>
-                              <TimeSelect24
-                                value={day.breakStart}
-                                onChange={(v) => patchDay(d, { breakStart: v })}
-                              />
-                            </label>
-                            <label>
-                              <span>סוף הפסקה</span>
-                              <TimeSelect24
-                                value={day.breakEnd}
-                                onChange={(v) => patchDay(d, { breakEnd: v })}
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <p className="admin-muted" style={{ margin: 0 }}>
-                      היום סגור — לא יוצגו תורים באתר.
-                    </p>
-                  )}
                 </div>
-              ) : null}
+                <label className="admin-switch" htmlFor={switchId}>
+                  <span className="admin-switch-label">{isOpen ? "פתוח" : "סגור"}</span>
+                  <input
+                    id={switchId}
+                    type="checkbox"
+                    role="switch"
+                    checked={isOpen}
+                    aria-checked={isOpen}
+                    aria-label={`${name}: ${isOpen ? "פתוח" : "סגור"}`}
+                    onChange={(e) => patchDay(d, { closed: !e.target.checked })}
+                  />
+                  <span className="admin-switch-track" aria-hidden="true">
+                    <span className="admin-switch-thumb" />
+                  </span>
+                </label>
+              </div>
+
+              <div className="admin-hours-day-body">
+                {!day.closed ? (
+                  <>
+                    <div className="admin-hours-window">
+                      <label>
+                        <span>פתיחה</span>
+                        <TimeSelect24 value={day.open} onChange={(v) => patchDay(d, { open: v })} />
+                      </label>
+                      <label>
+                        <span>סגירה</span>
+                        <TimeSelect24 value={day.close} onChange={(v) => patchDay(d, { close: v })} />
+                      </label>
+                    </div>
+
+                    <label className="admin-check">
+                      <input
+                        type="checkbox"
+                        checked={day.breakOn}
+                        onChange={(e) => patchDay(d, { breakOn: e.target.checked })}
+                      />
+                      <span>הפסקה ביום זה</span>
+                    </label>
+
+                    {day.breakOn ? (
+                      <div className="admin-hours-break">
+                        <p className="admin-setting-hint" style={{ margin: 0 }}>
+                          בשעות ההפסקה לא יוצעו תורים באתר.
+                        </p>
+                        <div className="admin-hours-window">
+                          <label>
+                            <span>תחילת הפסקה</span>
+                            <TimeSelect24
+                              value={day.breakStart}
+                              onChange={(v) => patchDay(d, { breakStart: v })}
+                            />
+                          </label>
+                          <label>
+                            <span>סוף הפסקה</span>
+                            <TimeSelect24
+                              value={day.breakEnd}
+                              onChange={(v) => patchDay(d, { breakEnd: v })}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="admin-muted" style={{ margin: 0 }}>
+                    היום סגור — לא יוצגו תורים באתר.
+                  </p>
+                )}
+              </div>
             </article>
           );
         })}

@@ -1,10 +1,24 @@
 import { getSql } from "./db";
 import { DEFAULT_SETTINGS, type ShopSettings } from "./settings-shared";
+import { buildShopPublic, type ShopPublic } from "./shop";
 
 export type { ShopSettings } from "./settings-shared";
 export { DEFAULT_SETTINGS } from "./settings-shared";
+export type { ShopPublic };
+
+const SETTINGS_TTL_MS = 30_000;
+
+let settingsCache: { at: number; value: ShopSettings } | null = null;
+
+export function invalidateShopSettingsCache(): void {
+  settingsCache = null;
+}
 
 export async function getShopSettings(): Promise<ShopSettings> {
+  const now = Date.now();
+  if (settingsCache && now - settingsCache.at < SETTINGS_TTL_MS) {
+    return settingsCache.value;
+  }
   try {
     const sql = getSql();
     const [row] = await sql<ShopSettings[]>`
@@ -15,13 +29,22 @@ export async function getShopSettings(): Promise<ShopSettings> {
              notify_confirmation, notify_reminder, notify_cancellation, waitlist_enabled,
              coalesce(waitlist_offer_ttl_minutes, 15) as waitlist_offer_ttl_minutes,
              coalesce(waitlist_min_lead_minutes, 30) as waitlist_min_lead_minutes,
-             coalesce(waitlist_max_per_phone, 2) as waitlist_max_per_phone
+             coalesce(waitlist_max_per_phone, 2) as waitlist_max_per_phone,
+             coalesce(slot_step_by_duration, true) as slot_step_by_duration
       from shop_settings where id = 1
     `;
-    return row ? { ...DEFAULT_SETTINGS, ...row } : DEFAULT_SETTINGS;
+    const value = row ? { ...DEFAULT_SETTINGS, ...row } : DEFAULT_SETTINGS;
+    settingsCache = { at: now, value };
+    return value;
   } catch {
-    return DEFAULT_SETTINGS;
+    return settingsCache?.value ?? DEFAULT_SETTINGS;
   }
+}
+
+/** Live website/admin shop profile from DB business fields. */
+export async function getLiveShop(): Promise<ShopPublic> {
+  const settings = await getShopSettings();
+  return buildShopPublic(settings);
 }
 
 export async function updateShopSettings(
@@ -36,13 +59,15 @@ export async function updateShopSettings(
       online_booking_horizon_days, manual_booking_horizon_days, min_client_cancel_minutes,
       lead_minutes, slot_step_minutes, buffer_minutes, reminder_hours_before,
       notify_confirmation, notify_reminder, notify_cancellation, waitlist_enabled,
-      waitlist_offer_ttl_minutes, waitlist_min_lead_minutes, waitlist_max_per_phone, updated_at
+      waitlist_offer_ttl_minutes, waitlist_min_lead_minutes, waitlist_max_per_phone,
+      slot_step_by_duration, updated_at
     ) values (
       1, ${next.business_name}, ${next.business_phone}, ${next.business_address}, ${next.owner_email},
       ${next.online_booking_horizon_days}, ${next.manual_booking_horizon_days}, ${next.min_client_cancel_minutes},
       ${next.lead_minutes}, ${next.slot_step_minutes}, ${next.buffer_minutes}, ${next.reminder_hours_before},
       ${next.notify_confirmation}, ${next.notify_reminder}, ${next.notify_cancellation}, ${next.waitlist_enabled},
       ${next.waitlist_offer_ttl_minutes}, ${next.waitlist_min_lead_minutes}, ${next.waitlist_max_per_phone},
+      ${next.slot_step_by_duration},
       now()
     )
     on conflict (id) do update set
@@ -64,7 +89,10 @@ export async function updateShopSettings(
       waitlist_offer_ttl_minutes = excluded.waitlist_offer_ttl_minutes,
       waitlist_min_lead_minutes = excluded.waitlist_min_lead_minutes,
       waitlist_max_per_phone = excluded.waitlist_max_per_phone,
+      slot_step_by_duration = excluded.slot_step_by_duration,
       updated_at = now()
   `;
+  invalidateShopSettingsCache();
+  settingsCache = { at: Date.now(), value: next };
   return next;
 }

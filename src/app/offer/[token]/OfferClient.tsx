@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { SHOP } from "@/lib/shop";
+import { useLiveShop } from "@/hooks/useLiveShop";
 
 export function OfferClient({ token }: { token: string }) {
+  const shop = useLiveShop();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +80,7 @@ export function OfferClient({ token }: { token: string }) {
     return (
       <div className="done-card">
         <h1>התור אושר</h1>
-        <p>נשמח לראותכם ב{SHOP.name}.</p>
+        <p>נשמח לראותכם ב{shop.name}.</p>
         <Link className="btn btn-primary" href="/booking?tab=bookings">
           לתורים שלי
         </Link>
@@ -129,7 +130,7 @@ export function OfferClient({ token }: { token: string }) {
   return (
     <div className="done-card" style={{ textAlign: "right" }}>
       <p className="kicker" style={{ color: "var(--brass)", fontWeight: 700, margin: 0 }}>
-        {SHOP.name}
+        {shop.name}
       </p>
       <h1 style={{ marginBlock: "0.5rem" }}>התפנה תור</h1>
       <p>

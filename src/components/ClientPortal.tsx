@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ClientIdentityForm, type ClientInfo } from "@/components/ClientIdentityForm";
 import { BookingFlow, type BookingService } from "@/components/BookingFlow";
 import { NAME_LIMITS, truncateLabel } from "@/lib/name-limits";
-import { SHOP, waMe } from "@/lib/shop";
+import { waMe, type ShopPublic } from "@/lib/shop";
+import { useLiveShop } from "@/hooks/useLiveShop";
 import { formatJerusalem } from "@/lib/time";
 
 type Tab = "new" | "bookings" | "settings" | "contact";
@@ -83,12 +84,15 @@ export function ClientPortal({
   horizonDays,
   initialTab,
   initialService,
+  shop: shopProp,
 }: {
   services: BookingService[];
   horizonDays: number;
   initialTab?: string;
   initialService?: string;
+  shop?: ShopPublic;
 }) {
+  const shop = useLiveShop(shopProp);
   const [tab, setTab] = useState<Tab>(() => parseTab(initialTab));
   const [client, setClient] = useState<ClientInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -233,13 +237,13 @@ export function ClientPortal({
   return (
     <div className="client-portal">
       <header className="client-top">
-        <p className="client-brand">{SHOP.name}</p>
+        <p className="client-brand">{shop.name}</p>
         {client ? (
           <h1 className="client-hello" title={client.name}>
             שלום, {truncateLabel(client.name, NAME_LIMITS.person)}
           </h1>
         ) : (
-          <p className="client-sub">{SHOP.addressShort}</p>
+          <p className="client-sub">{shop.addressShort}</p>
         )}
       </header>
 
@@ -266,6 +270,7 @@ export function ClientPortal({
                 services={services}
                 horizonDays={horizonDays}
                 initialService={initialService}
+                shop={shop}
                 onClientAuthenticated={(c) => void onAuth(c)}
                 onBooked={() => {
                   void loadBookings();
@@ -412,13 +417,13 @@ export function ClientPortal({
           <div className="account-panel account-contact">
             <h2>יצירת קשר</h2>
             <p className="bf-muted">
-              {SHOP.name} · {SHOP.addressShort}
+              {shop.name} · {shop.addressShort}
             </p>
-            <a className="btn btn-primary" href={waMe("שלום, אשמח לעזרה לגבי התור שלי")}>
+            <a className="btn btn-primary" href={waMe("שלום, אשמח לעזרה לגבי התור שלי", shop)}>
               WhatsApp
             </a>
-            <a className="btn btn-ghost" href={`tel:${SHOP.phoneE164}`}>
-              חייגו {SHOP.phoneDisplay}
+            <a className="btn btn-ghost" href={`tel:${shop.phoneE164}`}>
+              חייגו {shop.phoneDisplay}
             </a>
           </div>
         )}

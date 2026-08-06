@@ -27,12 +27,16 @@ export async function PATCH(req: NextRequest) {
     "min_client_cancel_minutes",
     "lead_minutes",
     "slot_step_minutes",
+    "slot_step_by_duration",
     "buffer_minutes",
     "reminder_hours_before",
     "notify_confirmation",
     "notify_reminder",
     "notify_cancellation",
     "waitlist_enabled",
+    "waitlist_offer_ttl_minutes",
+    "waitlist_min_lead_minutes",
+    "waitlist_max_per_phone",
   ];
   const patch: Partial<ShopSettings> = {};
   for (const key of allowed) {

@@ -2,6 +2,7 @@ import { hash, compare } from "bcryptjs";
 import { getSql } from "./db";
 import { getEmailProvider } from "./email";
 import { otpEmailBody } from "./messages";
+import { getLiveShop } from "./settings";
 
 function randomOtp(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -22,7 +23,8 @@ export async function requestPasswordChangeOtp(): Promise<void> {
     values (${codeHash}, 'password_change', now() + interval '10 minutes')
   `;
 
-  const msg = otpEmailBody(code);
+  const shop = await getLiveShop();
+  const msg = otpEmailBody(code, shop);
   await getEmailProvider().send(email, msg.subject, msg.text);
 }
 

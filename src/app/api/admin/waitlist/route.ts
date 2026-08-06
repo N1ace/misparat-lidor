@@ -3,6 +3,7 @@ import { readSession } from "@/lib/auth";
 import { getSql } from "@/lib/db";
 import { clampName, NAME_LIMITS } from "@/lib/name-limits";
 import { normalizePhoneIL } from "@/lib/phone";
+import { getAvailableSlots, slotsInPreferredWindows } from "@/lib/availability";
 import { offerToNextEligible } from "@/lib/waitlist";
 
 export const runtime = "nodejs";
@@ -64,8 +65,10 @@ export async function POST(req: NextRequest) {
     target_date?: string;
     preferred_date?: string;
     any_time?: boolean;
+    windows?: { start: string; end: string }[];
     notes?: string;
     offer_start?: string;
+    force?: boolean;
   };
 
   // Manual offer push: { id, offer_start }
@@ -102,26 +105,85 @@ export async function POST(req: NextRequest) {
   const phone = normalizePhoneIL(body.client_phone);
   if (!phone) return NextResponse.json({ error: "טלפון לא תקין" }, { status: 400 });
   const notes = body.notes?.trim() ? clampName(body.notes, NAME_LIMITS.notes) : null;
-  const anyTime = body.any_time !== false;
+  const windows = Array.isArray(body.windows) ? body.windows : [];
+  const anyTime = body.any_time !== false && !windows.length;
+  const serviceId = body.service_id!;
+  const targetDateFinal = targetDate;
+
+  if (!anyTime && !windows.length) {
+    return NextResponse.json({ error: "בחרו חלון שעות או ׳כל היום׳" }, { status: 400 });
+  }
 
   const sql = getSql();
   const [service] = await sql<{ duration_minutes: number; price_agorot: number }[]>`
     select duration_minutes, price_agorot from services
-    where id = ${body.service_id}::uuid and active = true
+    where id = ${serviceId}::uuid and active = true
   `;
   if (!service) return NextResponse.json({ error: "שירות לא נמצא" }, { status: 404 });
 
+  if (!body.force) {
+    const slots = await getAvailableSlots(targetDateFinal, serviceId, { bypassLead: true });
+    const [booked] = await sql<{ n: number }[]>`
+      select count(*)::int as n from appointments
+      where status in ('confirmed','held','done')
+        and (timezone('Asia/Jerusalem', lower(period)))::date = ${targetDateFinal}::date
+    `;
+    if (slots.length === 0 && !(booked?.n > 0)) {
+      return NextResponse.json(
+        {
+          error: "ביום הזה אין תורים תפוסים — אין צורך ברשימת המתנה",
+          code: "day_empty",
+        },
+        { status: 409 },
+      );
+    }
+    if (anyTime && slots.length > 0) {
+      return NextResponse.json(
+        {
+          error: "יש תורים פנויים ביום הזה — קבעו תור רגיל במקום רשימת המתנה",
+          code: "has_slots",
+          slots: slots.slice(0, 8),
+        },
+        { status: 409 },
+      );
+    }
+    if (!anyTime && windows.length) {
+      const openInPref = slotsInPreferredWindows(slots, windows);
+      if (openInPref.length > 0) {
+        return NextResponse.json(
+          {
+            error: "בחלון השעות שבחרתם יש תור פנוי — אפשר לקבוע אותו עכשיו",
+            code: "open_slots",
+            slots: openInPref.slice(0, 8),
+          },
+          { status: 409 },
+        );
+      }
+    }
+  }
+
   const manageToken = crypto.randomUUID().replace(/-/g, "");
-  const [row] = await sql`
+
+  const [row] = await sql<{ id: string }[]>`
     insert into waitlist_entries (
       service_id, duration_minutes, price_agorot,
       client_name, client_phone, target_date, any_time, manage_token, notes, status
     ) values (
-      ${body.service_id}::uuid, ${service.duration_minutes}, ${service.price_agorot},
-      ${clientName}, ${phone}, ${targetDate}::date, ${anyTime}, ${manageToken}, ${notes}, 'waiting'
+      ${serviceId}::uuid, ${service.duration_minutes}, ${service.price_agorot},
+      ${clientName}, ${phone}, ${targetDateFinal}::date, ${anyTime}, ${manageToken}, ${notes}, 'waiting'
     )
     returning id
   `;
+
+  for (const w of windows) {
+    const start = w.start.length === 5 ? `${w.start}:00` : w.start;
+    const end = w.end.length === 5 ? `${w.end}:00` : w.end;
+    await sql`
+      insert into waitlist_windows (entry_id, start_time, end_time)
+      values (${row.id}::uuid, ${start}::time, ${end}::time)
+    `;
+  }
+
   return NextResponse.json({ ok: true, id: row.id });
 }
 

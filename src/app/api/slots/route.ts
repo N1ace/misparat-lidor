@@ -18,10 +18,19 @@ export async function GET(req: NextRequest) {
     horizonEnd.setHours(23, 59, 59, 999);
     horizonEnd.setDate(horizonEnd.getDate() + settings.online_booking_horizon_days);
     if (dayStart > horizonEnd) {
-      return NextResponse.json({ slots: [], horizonDays: settings.online_booking_horizon_days });
+      return NextResponse.json(
+        { slots: [], horizonDays: settings.online_booking_horizon_days },
+        { headers: { "Cache-Control": "private, max-age=15" } },
+      );
     }
     const slots = await getAvailableSlots(date, serviceId);
-    return NextResponse.json({ slots, horizonDays: settings.online_booking_horizon_days });
+    return NextResponse.json(
+      { slots, horizonDays: settings.online_booking_horizon_days },
+      {
+        // Short private cache: revisiting the same day feels instant; holds stay fresh enough
+        headers: { "Cache-Control": "private, max-age=15" },
+      },
+    );
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "שגיאת שרת" }, { status: 500 });

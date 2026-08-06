@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { TimeSelect24 } from "@/components/TimeSelect24";
+import { ClientPhoneSuggest } from "@/components/ClientPhoneSuggest";
+import { IconPhone, IconTrash } from "@/components/icons";
 import { NAME_LIMITS, truncateLabel } from "@/lib/name-limits";
+import { formatInTimeZone } from "date-fns-tz";
 
 type Service = { id: string; name: string };
 
@@ -33,7 +37,18 @@ const emptyForm = {
   serviceId: "",
   preferredDate: "",
   notes: "",
+  anyTime: true,
+  prefStart: "10:00",
+  prefEnd: "14:00",
 };
+
+function slotLabel(iso: string) {
+  try {
+    return formatInTimeZone(iso, "Asia/Jerusalem", "HH:mm");
+  } catch {
+    return iso;
+  }
+}
 
 export function WaitlistPanel({ services }: { services: Service[] }) {
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -77,19 +92,40 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
     setError(null);
     setMsg(null);
     try {
-      const res = await fetch("/api/admin/waitlist", {
+      const windows = form.anyTime
+        ? undefined
+        : [{ start: form.prefStart, end: form.prefEnd }];
+      const payload = {
+        client_name: form.name,
+        client_phone: form.phone,
+        service_id: form.serviceId,
+        target_date: form.preferredDate,
+        any_time: form.anyTime,
+        windows,
+        notes: form.notes || undefined,
+      };
+      let res = await fetch("/api/admin/waitlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client_name: form.name,
-          client_phone: form.phone,
-          service_id: form.serviceId,
-          target_date: form.preferredDate,
-          any_time: true,
-          notes: form.notes || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
-      const data = await res.json();
+      let data = await res.json();
+      if (res.status === 409 && (data.code === "open_slots" || data.code === "has_slots")) {
+        const times = (data.slots as string[] | undefined)?.map(slotLabel).join(", ") || "";
+        const ok = window.confirm(
+          `${data.error || "יש תור פנוי"}${times ? `\nשעות פנויות: ${times}` : ""}\n\nלהוסיף לרשימת ההמתנה בכל זאת?`,
+        );
+        if (!ok) {
+          setError(data.error || "יש תור פנוי בחלון שבחרתם");
+          return;
+        }
+        res = await fetch("/api/admin/waitlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, force: true }),
+        });
+        data = await res.json();
+      }
       if (!res.ok) {
         setError(data.error || "שגיאה בהוספה");
         return;
@@ -127,9 +163,6 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
       return;
     }
     const [h, m] = hm.split(":").map(Number);
-    const start = new Date(`${entry.target_date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`);
-    // Interpret as Jerusalem wall time via ISO offset approximation: send ISO from local construction
-    // Better: send as Jerusalem ISO using noon-relative — API expects Date that validates.
     const isoGuess = `${entry.target_date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+03:00`;
     setError(null);
     const res = await fetch("/api/admin/waitlist", {
@@ -143,7 +176,6 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
       return;
     }
     setMsg("הצעה נשלחה");
-    void start;
     await load();
   }
 
@@ -191,7 +223,11 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
                 {e.target_date ? (
                   <span className="admin-entity-meta">
                     יעד: {formatPreferredDate(e.target_date)}
-                    {e.any_time ? " · כל היום" : ""}
+                    {e.any_time
+                      ? " · כל היום"
+                      : e.windows?.length
+                        ? ` · ${e.windows.map((w) => `${w.start}–${w.end}`).join(", ")}`
+                        : ""}
                   </span>
                 ) : null}
                 <span className="admin-badge">
@@ -204,11 +240,22 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
                     הצע תור
                   </button>
                 ) : null}
-                <a className="cal-chip" href={`tel:${e.client_phone}`}>
-                  חיוג
+                <a
+                  className="admin-action-icon"
+                  href={`tel:${e.client_phone}`}
+                  title="חיוג"
+                  aria-label="חיוג"
+                >
+                  <IconPhone />
                 </a>
-                <button type="button" className="admin-danger-link" onClick={() => void remove(e)}>
-                  הסר
+                <button
+                  type="button"
+                  className="admin-action-icon danger"
+                  title="הסרה"
+                  aria-label="הסרה"
+                  onClick={() => void remove(e)}
+                >
+                  <IconTrash />
                 </button>
               </div>
             </article>
@@ -235,6 +282,13 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
               </button>
             </div>
             <div className="cal-modal-body">
+              <ClientPhoneSuggest
+                phone={form.phone}
+                name={form.name}
+                onPhoneChange={(phone) => setForm((f) => ({ ...f, phone }))}
+                onNameChange={(name) => setForm((f) => ({ ...f, name }))}
+                required
+              />
               <label>
                 <span>שם</span>
                 <input
@@ -244,15 +298,6 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
                   onChange={(e) =>
                     setForm({ ...form, name: e.target.value.slice(0, NAME_LIMITS.person) })
                   }
-                />
-              </label>
-              <label>
-                <span>טלפון</span>
-                <input
-                  required
-                  dir="ltr"
-                  value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 />
               </label>
               <label>
@@ -279,6 +324,32 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
                   onChange={(e) => setForm({ ...form, preferredDate: e.target.value })}
                 />
               </label>
+              <label className="admin-check-row">
+                <input
+                  type="checkbox"
+                  checked={form.anyTime}
+                  onChange={(e) => setForm({ ...form, anyTime: e.target.checked })}
+                />
+                <span>כל שעות היום</span>
+              </label>
+              {!form.anyTime ? (
+                <div className="admin-row">
+                  <label>
+                    <span>משעה מועדפת</span>
+                    <TimeSelect24
+                      value={form.prefStart}
+                      onChange={(v) => setForm({ ...form, prefStart: v })}
+                    />
+                  </label>
+                  <label>
+                    <span>עד שעה</span>
+                    <TimeSelect24
+                      value={form.prefEnd}
+                      onChange={(v) => setForm({ ...form, prefEnd: v })}
+                    />
+                  </label>
+                </div>
+              ) : null}
               <label>
                 <span>הערות</span>
                 <textarea
@@ -293,7 +364,10 @@ export function WaitlistPanel({ services }: { services: Service[] }) {
             </div>
             <div className="cal-modal-actions">
               <button type="submit" className="admin-btn-primary" disabled={saving}>
-                {saving ? "שומר…" : "הוספה"}
+                {saving ? "שומר…" : "שמירה"}
+              </button>
+              <button type="button" className="admin-btn-secondary" onClick={() => setModal(false)}>
+                ביטול
               </button>
             </div>
           </form>

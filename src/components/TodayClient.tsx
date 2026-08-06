@@ -1,9 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { formatInTimeZone } from "date-fns-tz";
 import { TimeSelect24 } from "@/components/TimeSelect24";
+import { ClientPhoneSuggest } from "@/components/ClientPhoneSuggest";
 import { NAME_LIMITS, truncateLabel } from "@/lib/name-limits";
 
 type Appt = {
@@ -148,6 +149,13 @@ export function TodayClient({
             ))}
           </select>
           <TimeSelect24 value={addTime} onChange={setAddTime} className="rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 w-full" />
+          <ClientPhoneSuggest
+            phone={addPhone}
+            name={addName}
+            onPhoneChange={setAddPhone}
+            onNameChange={setAddName}
+            inputClassName="w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2"
+          />
           <input
             value={addName}
             maxLength={NAME_LIMITS.person}
@@ -155,7 +163,6 @@ export function TodayClient({
             placeholder="שם"
             className="w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2"
           />
-          <input value={addPhone} onChange={(e) => setAddPhone(e.target.value)} placeholder="טלפון" className="w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2" />
           <button type="button" onClick={addWalkIn} className="rounded-xl bg-[var(--accent)] px-4 py-2 font-bold text-[#1a0f0a]">
             שמור תור
           </button>

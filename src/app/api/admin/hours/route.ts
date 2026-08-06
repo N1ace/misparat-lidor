@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readSession } from "@/lib/auth";
 import { getSql } from "@/lib/db";
-import { ensureWorkingHoursSeeded } from "@/lib/hours";
+import { ensureWorkingHoursSeeded, invalidateWorkingHoursCache } from "@/lib/hours";
 
 export const runtime = "nodejs";
 
@@ -38,5 +38,6 @@ export async function PUT(req: NextRequest) {
       `;
     }
   });
+  invalidateWorkingHoursCache();
   return NextResponse.json({ ok: true });
 }

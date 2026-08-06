@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatInTimeZone } from "date-fns-tz";
 import Link from "next/link";
 import { ClientIdentityForm, type ClientInfo } from "@/components/ClientIdentityForm";
+import { TimeSelect24 } from "@/components/TimeSelect24";
 import {
   bookingCopyText,
   buildIcs,
   downloadIcs,
   googleCalendarUrl,
 } from "@/lib/calendar-links";
-import { SHOP } from "@/lib/shop";
+import { SHOP, type ShopPublic } from "@/lib/shop";
+import { useLiveShop } from "@/hooks/useLiveShop";
 import { NAME_LIMITS, truncateLabel } from "@/lib/name-limits";
 import { formatJerusalem } from "@/lib/time";
 
@@ -47,6 +49,16 @@ function resolveInitialService(services: BookingService[], initial?: string) {
 
 function ymdInTz(d: Date, tz = "Asia/Jerusalem") {
   return formatInTimeZone(d, tz, "yyyy-MM-dd");
+}
+
+function addDaysYmd(ymd: string, delta: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + delta);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
+function slotCacheKey(serviceId: string, date: string) {
+  return `${serviceId}|${date}`;
 }
 
 function addMonths(ymd: string, delta: number): string {
@@ -96,6 +108,7 @@ export function BookingFlow({
   services,
   initialService,
   horizonDays = 30,
+  shop: shopProp,
   onOpenBookings,
   onBooked,
   onClientAuthenticated,
@@ -103,10 +116,12 @@ export function BookingFlow({
   services: BookingService[];
   initialService?: string;
   horizonDays?: number;
+  shop?: ShopPublic;
   onOpenBookings?: () => void;
   onBooked?: () => void;
   onClientAuthenticated?: (client: ClientInfo) => void;
 }) {
+  const shop = useLiveShop(shopProp || SHOP);
   const preselected = resolveInitialService(services, initialService);
   const [step, setStep] = useState(preselected ? 2 : 1);
   const [serviceId, setServiceId] = useState(preselected);
@@ -130,6 +145,12 @@ export function BookingFlow({
   const [skippedIdentity, setSkippedIdentity] = useState(false);
   const [waitlistBusy, setWaitlistBusy] = useState(false);
   const [waitlistMsg, setWaitlistMsg] = useState<string | null>(null);
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [wlAnyTime, setWlAnyTime] = useState(true);
+  const [wlStart, setWlStart] = useState("10:00");
+  const [wlEnd, setWlEnd] = useState("14:00");
+  const slotsCacheRef = useRef(new Map<string, string[]>());
+  const prefetchingRef = useRef(new Set<string>());
 
   const service = services.find((s) => s.id === serviceId);
   const todayYmd = ymdInTz(new Date());
@@ -195,12 +216,15 @@ export function BookingFlow({
     const onVis = () => {
       if (document.visibilityState === "visible") loadHours();
     };
+    const onHoursChanged = () => loadHours();
     window.addEventListener("focus", loadHours);
     document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("lidor:hours-changed", onHoursChanged);
     return () => {
       cancelled = true;
       window.removeEventListener("focus", loadHours);
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("lidor:hours-changed", onHoursChanged);
     };
   }, []);
 
@@ -219,25 +243,60 @@ export function BookingFlow({
   useEffect(() => {
     if (!serviceId || !date) return;
     let cancelled = false;
-    setLoadingSlots(true);
+    const key = slotCacheKey(serviceId, date);
+    const cached = slotsCacheRef.current.get(key);
+
     setSlot(null);
     setError(null);
-    fetch(`/api/slots?date=${date}&serviceId=${serviceId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        setSlots(data.slots || []);
-      })
-      .catch(() => {
-        if (!cancelled) setSlots([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingSlots(false);
-      });
+    setWaitlistOpen(false);
+    setWaitlistMsg(null);
+
+    if (cached) {
+      setSlots(cached);
+      setLoadingSlots(false);
+    } else {
+      setLoadingSlots(true);
+    }
+
+    const load = (ymd: string, { background = false }: { background?: boolean } = {}) => {
+      const k = slotCacheKey(serviceId, ymd);
+      if (slotsCacheRef.current.has(k) && background) return;
+      if (prefetchingRef.current.has(k)) return;
+      prefetchingRef.current.add(k);
+      fetch(`/api/slots?date=${ymd}&serviceId=${serviceId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          const list = (data.slots || []) as string[];
+          slotsCacheRef.current.set(k, list);
+          if (!cancelled && ymd === date) {
+            setSlots(list);
+          }
+        })
+        .catch(() => {
+          if (!cancelled && ymd === date && !cached) setSlots([]);
+        })
+        .finally(() => {
+          prefetchingRef.current.delete(k);
+          if (!cancelled && ymd === date) setLoadingSlots(false);
+        });
+    };
+
+    load(date);
+    // Prefetch nearby selectable days for snappier calendar tapping
+    for (const delta of [-1, 1, 2]) {
+      const neighbor = addDaysYmd(date, delta);
+      if (neighbor < todayYmd || neighbor > horizonEnd) continue;
+      if (closedYmds.has(neighbor)) continue;
+      const [y, m, d] = neighbor.split("-").map(Number);
+      const dow = new Date(y, m - 1, d).getDay();
+      if (openDays && !openDays.has(dow)) continue;
+      load(neighbor, { background: true });
+    }
+
     return () => {
       cancelled = true;
     };
-  }, [serviceId, date]);
+  }, [serviceId, date, todayYmd, horizonEnd, openDays, closedYmds]);
 
   function goAfterDatetime() {
     if (!slot || !serviceId) return;
@@ -277,6 +336,7 @@ export function BookingFlow({
       }
       setBooked(data.appointment as BookedAppt);
       setStep(5);
+      slotsCacheRef.current.clear();
       onBooked?.();
     } catch {
       setError("שגיאת רשת");
@@ -292,6 +352,10 @@ export function BookingFlow({
       setStep(3);
       return;
     }
+    if (!wlAnyTime && wlStart >= wlEnd) {
+      setError("חלון השעות המועדף אינו תקין");
+      return;
+    }
     setWaitlistBusy(true);
     setWaitlistMsg(null);
     setError(null);
@@ -302,17 +366,36 @@ export function BookingFlow({
         body: JSON.stringify({
           serviceId,
           targetDate: date,
-          anyTime: true,
+          anyTime: wlAnyTime,
+          windows: wlAnyTime ? undefined : [{ start: wlStart, end: wlEnd }],
           name: client.name,
           phone: client.phone,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
+        if (data.code === "open_slots" || data.code === "has_slots") {
+          const times = (data.slots as string[] | undefined) || [];
+          const labels = times
+            .map((iso) => formatInTimeZone(iso, "Asia/Jerusalem", "HH:mm"))
+            .join(", ");
+          const ok = window.confirm(
+            `${data.error || "יש תור פנוי"}${labels ? `\nשעות פנויות: ${labels}` : ""}\n\nלקבוע את השעה הראשונה הפנויה?`,
+          );
+          if (ok && times[0]) {
+            setSlot(times[0]);
+            setWaitlistOpen(false);
+            setError(null);
+            return;
+          }
+          setError(data.error || "יש תור פנוי בחלון שבחרתם");
+          return;
+        }
         setError(data.error || "לא ניתן להירשם לרשימת ההמתנה");
         return;
       }
       setWaitlistMsg("נרשמתם לרשימת ההמתנה — נעדכן אם יתפנה תור");
+      setWaitlistOpen(false);
     } catch {
       setError("שגיאת רשת");
     } finally {
@@ -335,7 +418,7 @@ export function BookingFlow({
   if (step === 5 && booked) {
     const start = new Date(booked.start);
     const end = new Date(booked.end);
-    const title = `${booked.service} · ${SHOP.name}`;
+    const title = `${booked.service} · ${shop.name}`;
     const details = `תור ל${booked.clientName}\n${booked.cancelUrl}`;
     return (
       <div className="done-card bf-success">
@@ -381,7 +464,7 @@ export function BookingFlow({
             className="btn btn-ghost"
             onClick={async () => {
               const text = bookingCopyText({
-                shop: SHOP.name,
+                shop: shop.name,
                 service: booked.service,
                 whenLabel,
                 address: booked.address,
@@ -532,15 +615,69 @@ export function BookingFlow({
               ) : slots.length === 0 ? (
                 <div className="bf-waitlist-cta">
                   <p className="bf-muted">אין תורים פנויים ביום הזה</p>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    style={{ width: "100%", marginBlockStart: "0.75rem" }}
-                    onClick={() => void joinWaitlist()}
-                    disabled={waitlistBusy}
-                  >
-                    {waitlistBusy ? "נרשם…" : "הצטרפות לרשימת המתנה ליום זה"}
-                  </button>
+                  {!waitlistOpen ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ width: "100%", marginBlockStart: "0.75rem" }}
+                      onClick={() => {
+                        setWaitlistOpen(true);
+                        setWaitlistMsg(null);
+                        setError(null);
+                      }}
+                    >
+                      הצטרפות לרשימת המתנה ליום זה
+                    </button>
+                  ) : (
+                    <div className="bf-waitlist-form" style={{ marginBlockStart: "0.75rem" }}>
+                      <label className="bf-check-row" style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={wlAnyTime}
+                          onChange={(e) => setWlAnyTime(e.target.checked)}
+                        />
+                        <span>כל שעות היום</span>
+                      </label>
+                      {!wlAnyTime ? (
+                        <div
+                          className="bf-pref-hours"
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "0.65rem",
+                            marginBlock: "0.65rem",
+                          }}
+                        >
+                          <label>
+                            <span className="bf-muted">משעה מועדפת</span>
+                            <TimeSelect24 value={wlStart} onChange={setWlStart} />
+                          </label>
+                          <label>
+                            <span className="bf-muted">עד שעה</span>
+                            <TimeSelect24 value={wlEnd} onChange={setWlEnd} />
+                          </label>
+                        </div>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ width: "100%", marginBlockStart: "0.5rem" }}
+                        onClick={() => void joinWaitlist()}
+                        disabled={waitlistBusy}
+                      >
+                        {waitlistBusy ? "נרשם…" : "אישור הצטרפות"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ width: "100%", marginBlockStart: "0.35rem" }}
+                        onClick={() => setWaitlistOpen(false)}
+                        disabled={waitlistBusy}
+                      >
+                        ביטול
+                      </button>
+                    </div>
+                  )}
                   {waitlistMsg ? <p className="account-ok">{waitlistMsg}</p> : null}
                 </div>
               ) : (

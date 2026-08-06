@@ -8,6 +8,7 @@ import {
   normalizeServiceColor,
   pickServiceColor,
 } from "@/lib/service-colors";
+import { IconTrash } from "@/components/icons";
 
 type Service = {
   id: string;
@@ -30,14 +31,32 @@ const emptyForm = {
   color: SERVICE_COLORS[0] as string,
 };
 
+const DURATION_CHIPS = [15, 30, 45, 60] as const;
+
 const PLACEHOLDER =
   "data:image/svg+xml," +
   encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" width="112" height="112" viewBox="0 0 112 112">
-      <rect width="112" height="112" rx="12" fill="#eef1f4"/>
-      <text x="56" y="62" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="11">אין תמונה</text>
+      <rect width="112" height="112" rx="14" fill="#eef1f4"/>
+      <rect x="34" y="38" width="44" height="36" rx="6" fill="none" stroke="#94a3b8" stroke-width="2.2"/>
+      <circle cx="46" cy="50" r="4" fill="#94a3b8"/>
+      <path d="M38 68l12-12 8 8 6-6 10 10" fill="none" stroke="#94a3b8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`,
   );
+
+function IconUpload({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 16V5m0 0l-4 4m4-4l4 4M5 19h14"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 function priceILS(agorot: number) {
   return `₪${(agorot / 100).toFixed(agorot % 100 === 0 ? 0 : 2)}`;
@@ -85,19 +104,7 @@ function IconPencil({ className }: { className?: string }) {
   );
 }
 
-function IconTrash({ className }: { className?: string }) {
-  return (
-    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M3 6h18M8 6V4h8v2m-1 0v14a2 2 0 01-2 2H9a2 2 0 01-2-2V6h10z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+
 
 export default function AdminServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
@@ -194,16 +201,14 @@ export default function AdminServicesPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error || "העלאה נכשלה");
-        setLocalPreview(null);
+        // Keep local preview so the owner can retry / still see the pick
         return;
       }
       setForm((f) => ({ ...f, image_path: data.url as string }));
-      setLocalPreview(null);
+      // Keep blob preview until server URL is in form; revoke previous only
     } catch {
       setError("שגיאת רשת בהעלאה");
-      setLocalPreview(null);
     } finally {
-      if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
@@ -367,7 +372,7 @@ export default function AdminServicesPage() {
                   aria-label="מחיקה"
                   onClick={() => void remove(s)}
                 >
-                  <IconTrash />
+                  <IconTrash size={18} />
                 </button>
               </div>
             </article>
@@ -388,58 +393,19 @@ export default function AdminServicesPage() {
             if (e.target === e.currentTarget) setModal(null);
           }}
         >
-          <form className="cal-modal-card" onSubmit={(e) => void submitModal(e)}>
+          <form className="cal-modal-card admin-svc-modal" onSubmit={(e) => void submitModal(e)}>
             <div className="cal-modal-head">
               <h2>{modal === "add" ? "שירות חדש" : "עריכת שירות"}</h2>
-              <button type="button" className="cal-chip" onClick={() => setModal(null)}>
-                סגור
+              <button type="button" className="cal-icon-btn" onClick={() => setModal(null)} aria-label="סגור">
+                ×
               </button>
             </div>
             <div className="cal-modal-body">
-              <div className="admin-svc-upload">
-                <div className="admin-svc-modal-preview">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={localPreview || form.image_path.trim() || PLACEHOLDER}
-                    alt=""
-                  />
-                  {uploading ? <div className="admin-svc-upload-busy">מעלה…</div> : null}
-                </div>
-                <div className="admin-svc-upload-actions">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    className="sr-only"
-                    id="svc-image-upload"
-                    disabled={uploading || saving}
-                    onChange={(e) => void onPickImage(e.target.files?.[0] ?? null)}
-                  />
-                  <label
-                    htmlFor="svc-image-upload"
-                    className={`admin-btn-primary admin-upload-btn${uploading || saving ? " is-disabled" : ""}`}
-                  >
-                    {uploading ? "מעלה…" : form.image_path ? "החלפת תמונה" : "העלאת תמונה מהמכשיר"}
-                  </label>
-                  {form.image_path || localPreview ? (
-                    <button
-                      type="button"
-                      className="cal-chip"
-                      disabled={uploading || saving}
-                      onClick={clearImage}
-                    >
-                      הסרת תמונה
-                    </button>
-                  ) : null}
-                  <p className="admin-muted admin-upload-hint">
-                    JPG / PNG / WEBP · עד 5 מגה · מהגלריה או מהמצלמה
-                  </p>
-                </div>
-              </div>
               <label>
                 <span>שם</span>
                 <input
                   required
+                  autoFocus={modal === "add"}
                   value={form.name}
                   maxLength={NAME_LIMITS.service}
                   onChange={(e) =>
@@ -463,28 +429,86 @@ export default function AdminServicesPage() {
                   ))}
                 </div>
               </div>
-              <div className="admin-row">
-                <label>
-                  <span>דקות</span>
-                  <input
-                    type="number"
-                    min={5}
-                    required
-                    value={form.duration_minutes}
-                    onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })}
-                  />
+              <div className="admin-row admin-svc-metrics">
+                <div className="admin-svc-duration">
+                  <label>
+                    <span>משך (דקות)</span>
+                    <input
+                      type="number"
+                      min={5}
+                      required
+                      value={form.duration_minutes}
+                      onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })}
+                    />
+                  </label>
+                  <div className="admin-duration-chips" role="group" aria-label="משך מהיר">
+                    {DURATION_CHIPS.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        className={`admin-duration-chip${form.duration_minutes === m ? " on" : ""}`}
+                        onClick={() => setForm({ ...form, duration_minutes: m })}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <label className="admin-svc-price">
+                  <span>מחיר (₪)</span>
+                  <div className="admin-price-wrap">
+                    <span className="admin-price-currency" aria-hidden>
+                      ₪
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      required
+                      value={form.price_ils}
+                      onChange={(e) => setForm({ ...form, price_ils: Number(e.target.value) })}
+                    />
+                  </div>
                 </label>
-                <label>
-                  <span>מחיר ₪</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    required
-                    value={form.price_ils}
-                    onChange={(e) => setForm({ ...form, price_ils: Number(e.target.value) })}
-                  />
-                </label>
+              </div>
+              <div>
+                <span className="admin-field-label">תמונה</span>
+                <div className="admin-svc-upload">
+                  <div className="admin-svc-upload-actions">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="sr-only"
+                      id="svc-image-upload"
+                      disabled={uploading || saving}
+                      onChange={(e) => void onPickImage(e.target.files?.[0] ?? null)}
+                    />
+                    <label
+                      htmlFor="svc-image-upload"
+                      className={`admin-upload-pick${uploading || saving ? " is-disabled" : ""}`}
+                    >
+                      <IconUpload />
+                      <span>{uploading ? "מעלה…" : "בחר תמונה"}</span>
+                    </label>
+                    {form.image_path || localPreview ? (
+                      <button
+                        type="button"
+                        className="admin-danger-link admin-upload-clear"
+                        disabled={uploading || saving}
+                        onClick={clearImage}
+                      >
+                        הסרת תמונה
+                      </button>
+                    ) : null}
+                    <p className="admin-muted admin-upload-hint">JPG, PNG או WEBP • עד 5 מגה</p>
+                  </div>
+                  <div className="admin-svc-modal-preview">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={localPreview || form.image_path.trim() || PLACEHOLDER} alt="" />
+                    {uploading ? <div className="admin-svc-upload-busy">מעלה…</div> : null}
+                  </div>
+                </div>
               </div>
               <label>
                 <span>סדר תצוגה</span>
@@ -505,6 +529,12 @@ export default function AdminServicesPage() {
               {error ? <p className="cal-error">{error}</p> : null}
             </div>
             <div className="cal-modal-actions">
+              <button type="submit" className="admin-btn-primary" disabled={saving || uploading}>
+                {saving ? "שומר…" : uploading ? "מעלה תמונה…" : modal === "add" ? "הוסף שירות" : "שמירה"}
+              </button>
+              <button type="button" className="admin-btn-secondary" onClick={() => setModal(null)}>
+                ביטול
+              </button>
               {modal === "edit" && editId ? (
                 <button
                   type="button"
@@ -516,12 +546,7 @@ export default function AdminServicesPage() {
                 >
                   מחק שירות
                 </button>
-              ) : (
-                <span />
-              )}
-              <button type="submit" className="admin-btn-primary" disabled={saving || uploading}>
-                {saving ? "שומר…" : uploading ? "מעלה תמונה…" : modal === "add" ? "הוסף שירות" : "שמור שינויים"}
-              </button>
+              ) : null}
             </div>
           </form>
         </div>

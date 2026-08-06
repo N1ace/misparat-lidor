@@ -3,6 +3,7 @@ import { readSession } from "@/lib/auth";
 import { getSql } from "@/lib/db";
 import { autoCompletePastAppointments } from "@/lib/appointments-auto";
 import { computeReliability, type ReliabilityStat } from "@/lib/client-reliability";
+import { deleteClientById } from "@/lib/data-purge";
 import { clampName, NAME_LIMITS } from "@/lib/name-limits";
 import { normalizePhoneIL, isValidEmail } from "@/lib/phone";
 
@@ -48,20 +49,55 @@ async function withReliability(clients: ClientRow[]) {
 export async function GET(req: NextRequest) {
   const denied = await guard();
   if (denied) return denied;
-  await autoCompletePastAppointments();
+  const suggest = req.nextUrl.searchParams.get("suggest") === "1";
+  if (!suggest) await autoCompletePastAppointments();
   const q = (req.nextUrl.searchParams.get("q") || "").trim();
   const sql = getSql();
+
   if (q) {
     const like = `%${q}%`;
-    const clients = await sql<ClientRow[]>`
-      select id, name, phone, email, notes, notify_channel, created_at, updated_at
-      from clients
-      where name ilike ${like} or phone ilike ${like} or coalesce(email,'') ilike ${like}
-      order by updated_at desc
-      limit 200
-    `;
+    const digits = q.replace(/\D/g, "");
+    let phoneCore = digits;
+    if (phoneCore.startsWith("972")) phoneCore = phoneCore.slice(3);
+    if (phoneCore.startsWith("0")) phoneCore = phoneCore.slice(1);
+    const phoneLike = phoneCore.length >= 2 ? `%${phoneCore}%` : null;
+
+    const clients = phoneLike
+      ? await sql<ClientRow[]>`
+          select id, name, phone, email, notes, notify_channel, created_at, updated_at
+          from clients
+          where name ilike ${like}
+             or coalesce(email, '') ilike ${like}
+             or phone ilike ${like}
+             or phone ilike ${`%${digits}%`}
+             or regexp_replace(phone, '\D', '', 'g') like ${phoneLike}
+             or regexp_replace(phone, '\D', '', 'g') like ${`%0${phoneCore}%`}
+          order by
+            case
+              when regexp_replace(phone, '\D', '', 'g') like ${phoneLike} then 0
+              when phone ilike ${like} then 1
+              when name ilike ${like} then 2
+              else 3
+            end,
+            updated_at desc
+          limit ${suggest ? 12 : 200}
+        `
+      : await sql<ClientRow[]>`
+          select id, name, phone, email, notes, notify_channel, created_at, updated_at
+          from clients
+          where name ilike ${like} or phone ilike ${like} or coalesce(email, '') ilike ${like}
+          order by updated_at desc
+          limit ${suggest ? 12 : 200}
+        `;
+
+    if (suggest) {
+      return NextResponse.json({
+        clients: clients.map((c) => ({ id: c.id, name: c.name, phone: c.phone })),
+      });
+    }
     return NextResponse.json({ clients: await withReliability(clients) });
   }
+
   const clients = await sql<ClientRow[]>`
     select id, name, phone, email, notes, notify_channel, created_at, updated_at
     from clients
@@ -160,7 +196,17 @@ export async function DELETE(req: NextRequest) {
   if (denied) return denied;
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "חסר id" }, { status: 400 });
-  const sql = getSql();
-  await sql`delete from clients where id = ${id}::uuid`;
-  return NextResponse.json({ ok: true });
+  const withHistory =
+    req.nextUrl.searchParams.get("withHistory") === "1" ||
+    req.nextUrl.searchParams.get("withHistory") === "true";
+  try {
+    const counts = await deleteClientById(id, { withHistory });
+    return NextResponse.json({ ok: true, ...counts });
+  } catch (e: unknown) {
+    const err = e as { message?: string; status?: number };
+    return NextResponse.json(
+      { error: err.message || "שגיאה במחיקה" },
+      { status: err.status || 500 },
+    );
+  }
 }

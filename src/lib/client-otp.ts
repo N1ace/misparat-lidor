@@ -2,7 +2,7 @@ import { hash, compare } from "bcryptjs";
 import { getSql } from "./db";
 import { getEmailProvider } from "./email";
 import { getSmsProvider } from "./sms";
-import { SHOP } from "./shop";
+import { getLiveShop } from "./settings";
 
 /** Fixed OTP while SMS/email providers are not configured. */
 export const CLIENT_TEST_OTP = "000000";
@@ -18,6 +18,7 @@ export async function requestClientLoginOtp(opts: {
 
   const code = CLIENT_TEST_OTP;
   const codeHash = await hash(code, 10);
+  const shop = await getLiveShop();
   const sql = getSql();
 
   await sql`
@@ -42,12 +43,12 @@ export async function requestClientLoginOtp(opts: {
   // Providers may be console stubs — never block booking on delivery.
   try {
     if (opts.channel === "sms") {
-      await getSmsProvider().send(recipient, `קוד האימות שלך ב${SHOP.name}: ${code} (תקף 10 דק׳)`);
+      await getSmsProvider().send(recipient, `קוד האימות שלך ב${shop.name}: ${code} (תקף 10 דק׳)`);
     } else {
       await getEmailProvider().send(
         recipient,
-        `קוד אימות — ${SHOP.name}`,
-        `שלום ${opts.name},\n\nקוד האימות שלך: ${code}\n\nהקוד תקף ל־10 דקות.\nאם לא ביקשת — התעלם מהודעה זו.\n\n${SHOP.name}`,
+        `קוד אימות — ${shop.name}`,
+        `שלום ${opts.name},\n\nקוד האימות שלך: ${code}\n\nהקוד תקף ל־10 דקות.\nאם לא ביקשת — התעלם מהודעה זו.\n\n${shop.name}`,
       );
     }
   } catch (e) {

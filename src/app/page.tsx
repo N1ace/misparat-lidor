@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSql } from "@/lib/db";
-import { SHOP, waMe } from "@/lib/shop";
+import { waMe } from "@/lib/shop";
+import { getLiveShop } from "@/lib/settings";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { LandingEffects } from "@/components/LandingEffects";
@@ -38,13 +39,13 @@ async function loadServices(): Promise<Service[]> {
 }
 
 export default async function HomePage() {
-  const services = await loadServices();
-  const bookWa = waMe("היי, רציתי לקבוע תור");
+  const [services, shop] = await Promise.all([loadServices(), getLiveShop()]);
+  const bookWa = waMe("היי, רציתי לקבוע תור", shop);
 
   return (
     <>
       <div className="pole-strip spin" aria-hidden="true" />
-      <SiteHeader />
+      <SiteHeader shop={shop} />
       <LandingEffects />
 
       <div className="hero">
@@ -96,7 +97,7 @@ export default async function HomePage() {
           <div className="hero-reviews" aria-label="דירוגים">
             <a
               className="hero-review"
-              href={SHOP.googleReviewsUrl}
+              href={shop.googleReviewsUrl}
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`גוגל ${reviewsData.google.rating} כוכבים, ${reviewsData.google.count} ביקורות`}
@@ -115,7 +116,7 @@ export default async function HomePage() {
             </a>
             <a
               className="hero-review easy"
-              href={SHOP.easyUrl}
+              href={shop.easyUrl}
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`איזי ${reviewsData.easy.rating} מתוך ${reviewsData.easy.bestRating}, ${reviewsData.easy.count} ביקורות`}
@@ -137,10 +138,10 @@ export default async function HomePage() {
           </div>
           <div className="hero-place">
             <p className="hero-addr">
-              <a href="#location">{SHOP.addressShort}</a>
+              <a href="#location">{shop.addressShort}</a>
               <a
                 className="hero-nav hero-waze"
-                href={SHOP.wazeUrl}
+                href={shop.wazeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="נווט בוויז"
@@ -150,7 +151,7 @@ export default async function HomePage() {
               </a>
               <a
                 className="hero-nav hero-gmaps"
-                href={SHOP.mapsUrl}
+                href={shop.mapsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="מפות גוגל"
@@ -440,15 +441,15 @@ export default async function HomePage() {
             <div>
               <address>
                 <span className="icn i-store" aria-hidden="true" style={{ marginBlockEnd: "0.6rem" }} />
-                <strong>{SHOP.addressShort}</strong>
+                <strong>{shop.addressShort}</strong>
                 <br />
                 מספרת לידור
               </address>
               <div className="nav-row">
-                <a className="btn btn-primary" href={SHOP.wazeUrl} target="_blank" rel="noopener noreferrer">
+                <a className="btn btn-primary" href={shop.wazeUrl} target="_blank" rel="noopener noreferrer">
                   נווט בוויז
                 </a>
-                <a className="btn btn-ghost" href={SHOP.mapsUrl} target="_blank" rel="noopener noreferrer">
+                <a className="btn btn-ghost" href={shop.mapsUrl} target="_blank" rel="noopener noreferrer">
                   מפות גוגל
                 </a>
               </div>
@@ -456,9 +457,9 @@ export default async function HomePage() {
             </div>
             <div className="map-box">
               <iframe
-                title={`מפה: ${SHOP.name}, ${SHOP.addressShort}`}
+                title={`מפה: ${shop.name}, ${shop.addressShort}`}
                 loading="lazy"
-                src={SHOP.mapsEmbed}
+                src={shop.mapsEmbed}
                 referrerPolicy="no-referrer-when-downgrade"
                 allowFullScreen
               />
@@ -467,7 +468,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <SiteFooter />
+      <SiteFooter shop={shop} />
 
       <div className="side-fabs" aria-label="פעולות מהירות">
         <a className="fab-wa" href={bookWa} target="_blank" rel="noopener noreferrer" aria-label="וואטסאפ">
@@ -479,7 +480,7 @@ export default async function HomePage() {
       </div>
 
       <div className="action-bar" id="actionBar">
-        <a className="phone-ltr" href={`tel:${SHOP.phoneE164}`} aria-label="חיוג למספרה">
+        <a className="phone-ltr" href={`tel:${shop.phoneE164}`} aria-label="חיוג למספרה">
           📞 <bdi>חיוג</bdi>
         </a>
         <a href={bookWa} target="_blank" rel="noopener noreferrer" aria-label="וואטסאפ">

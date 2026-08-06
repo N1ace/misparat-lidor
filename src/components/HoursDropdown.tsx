@@ -86,12 +86,15 @@ export function HoursDropdown({ className = "" }: { className?: string }) {
     const onVis = () => {
       if (document.visibilityState === "visible") load();
     };
+    const onHoursChanged = () => load();
     window.addEventListener("focus", load);
     document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("lidor:hours-changed", onHoursChanged);
     return () => {
       cancelled = true;
       window.removeEventListener("focus", load);
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("lidor:hours-changed", onHoursChanged);
     };
   }, []);
 

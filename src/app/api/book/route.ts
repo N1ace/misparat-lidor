@@ -4,8 +4,7 @@ import { getSql } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { emailConfirmation, emailReminder, smsConfirmation, smsReminder } from "@/lib/messages";
 import { formatJerusalem } from "@/lib/time";
-import { SHOP } from "@/lib/shop";
-import { getShopSettings } from "@/lib/settings";
+import { getLiveShop, getShopSettings } from "@/lib/settings";
 import { readClientSession } from "@/lib/client-auth";
 import { validateBookablePeriod } from "@/lib/availability";
 
@@ -75,6 +74,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "שעה לא תקינה" }, { status: 400 });
   }
   const settings = await getShopSettings();
+  const shop = await getLiveShop();
   const horizonEnd = new Date();
   horizonEnd.setDate(horizonEnd.getDate() + settings.online_booking_horizon_days);
   if (start > horizonEnd) {
@@ -107,19 +107,22 @@ export async function POST(req: NextRequest) {
     name: client.name,
     service: service.name,
     startAt: start,
+    shop,
   });
-  const smsRem = smsReminder({ time: formatJerusalem(start, "HH:mm") });
+  const smsRem = smsReminder({ time: formatJerusalem(start, "HH:mm"), shop });
   const mailConfirm = emailConfirmation({
     name: client.name,
     service: service.name,
     startAt: start,
     cancelUrl,
+    shop,
   });
   const mailRem = emailReminder({
     name: client.name,
     service: service.name,
     startAt: start,
     cancelUrl,
+    shop,
   });
 
   const reminderAt = new Date(
@@ -184,14 +187,14 @@ export async function POST(req: NextRequest) {
       ok: true,
       id: rows.id,
       cancelToken,
-      shop: SHOP.name,
+      shop: shop.name,
       appointment: {
         service: service.name,
         start: start.toISOString(),
         end: end.toISOString(),
         clientName: client.name,
         clientPhone: client.phone,
-        address: SHOP.address,
+        address: shop.address,
         cancelUrl,
       },
     });

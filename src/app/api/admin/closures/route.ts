@@ -97,6 +97,56 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, id: row.id });
 }
 
+export async function PATCH(req: NextRequest) {
+  const denied = await guard();
+  if (denied) return denied;
+  const body = (await req.json().catch(() => ({}))) as {
+    id?: string;
+    dateYmd?: string;
+    endDateYmd?: string;
+    startTime?: string;
+    endTime?: string;
+    allDay?: boolean;
+    reason?: string;
+  };
+  if (!body.id) return NextResponse.json({ error: "חסר id" }, { status: 400 });
+  if (!body.dateYmd) return NextResponse.json({ error: "חסר תאריך" }, { status: 400 });
+
+  const allDay = !!body.allDay;
+  const endYmd = body.endDateYmd || body.dateYmd;
+  let start: Date;
+  let end: Date;
+  if (allDay) {
+    start = wallTimeToUtc(body.dateYmd, "00:00:00");
+    end = wallTimeToUtc(endYmd, "23:59:59");
+  } else {
+    if (!body.startTime || !body.endTime) {
+      return NextResponse.json({ error: "חסרות שעות" }, { status: 400 });
+    }
+    start = wallTimeToUtc(
+      body.dateYmd,
+      body.startTime.length === 5 ? `${body.startTime}:00` : body.startTime,
+    );
+    end = wallTimeToUtc(
+      endYmd,
+      body.endTime.length === 5 ? `${body.endTime}:00` : body.endTime,
+    );
+  }
+  if (!(start < end)) return NextResponse.json({ error: "טווח לא תקין" }, { status: 400 });
+
+  const sql = getSql();
+  const [row] = await sql`
+    update blocks set
+      period = tstzrange(${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz, '[)'),
+      reason = ${body.reason || null},
+      all_day = ${allDay}
+    where id = ${body.id}::uuid
+    returning id
+  `;
+  if (!row) return NextResponse.json({ error: "סגירה לא נמצאה" }, { status: 404 });
+  return NextResponse.json({ ok: true, id: row.id });
+}
+
 export async function DELETE(req: NextRequest) {
   const denied = await guard();
   if (denied) return denied;

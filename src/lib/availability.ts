@@ -1,5 +1,5 @@
 import { getSql } from "./db";
-import { ensureWorkingHoursSeeded, isWithinWorkingHours } from "./hours";
+import { getWindowsForDow, isWithinWorkingHours } from "./hours";
 import { LEAD_MINUTES, SLOT_STEP_MINUTES } from "./shop";
 import { getShopSettings } from "./settings";
 import { formatJerusalem, jerusalemDayOfWeek, wallTimeToUtc } from "./time";
@@ -63,62 +63,76 @@ export function computeAvailableSlots(input: SlotComputeInput): string[] {
 async function loadDayBusy(
   dateYmd: string,
   opts?: { excludeAppointmentId?: string },
-): Promise<{ windows: TimeWindow[]; busy: BusyPeriod[]; bufferMinutes: number; leadMinutes: number; stepMinutes: number }> {
-  await ensureWorkingHoursSeeded();
+): Promise<{
+  windows: TimeWindow[];
+  busy: BusyPeriod[];
+  apptBusy: BusyPeriod[];
+  blockBusy: BusyPeriod[];
+  bufferMinutes: number;
+  leadMinutes: number;
+  stepMinutes: number;
+  slotStepByDuration: boolean;
+}> {
   const sql = getSql();
-
   const dow = jerusalemDayOfWeek(dateYmd);
-  const windows = await sql<TimeWindow[]>`
-    select open_time::text, close_time::text
-    from working_hours
-    where day_of_week = ${dow}
-    order by open_time
-  `;
-
   const dayStart = wallTimeToUtc(dateYmd, "00:00:00");
   const dayEnd = wallTimeToUtc(dateYmd, "23:59:59");
   const excludeId = opts?.excludeAppointmentId || null;
+  const dayStartIso = dayStart.toISOString();
+  const dayEndIso = dayEnd.toISOString();
 
-  const appts = await sql<{ lower: Date; upper: Date }[]>`
-    select lower(period) as lower, upper(period) as upper
-    from appointments
-    where status in ('confirmed','held')
-      and period && tstzrange(${dayStart.toISOString()}::timestamptz, ${dayEnd.toISOString()}::timestamptz, '[)')
-      and (${excludeId}::uuid is null or id <> ${excludeId}::uuid)
-  `;
+  const [windows, appts, blocks, settings] = await Promise.all([
+    getWindowsForDow(dow),
+    sql<{ lower: Date; upper: Date }[]>`
+      select lower(period) as lower, upper(period) as upper
+      from appointments
+      where status in ('confirmed','held')
+        and period && tstzrange(${dayStartIso}::timestamptz, ${dayEndIso}::timestamptz, '[)')
+        and (${excludeId}::uuid is null or id <> ${excludeId}::uuid)
+    `,
+    sql<{ lower: Date; upper: Date }[]>`
+      select lower(period) as lower, upper(period) as upper
+      from blocks
+      where period && tstzrange(${dayStartIso}::timestamptz, ${dayEndIso}::timestamptz, '[)')
+    `,
+    getShopSettings().catch(() => null),
+  ]);
 
-  const blocks = await sql<{ lower: Date; upper: Date }[]>`
-    select lower(period) as lower, upper(period) as upper
-    from blocks
-    where period && tstzrange(${dayStart.toISOString()}::timestamptz, ${dayEnd.toISOString()}::timestamptz, '[)')
-  `;
+  const apptBusy: BusyPeriod[] = appts.map((a) => ({
+    start: new Date(a.lower),
+    end: new Date(a.upper),
+  }));
+  const blockBusy: BusyPeriod[] = blocks.map((b) => ({
+    start: new Date(b.lower),
+    end: new Date(b.upper),
+  }));
 
-  const busy: BusyPeriod[] = [
-    ...appts.map((a) => ({ start: new Date(a.lower), end: new Date(a.upper) })),
-    ...blocks.map((b) => ({ start: new Date(b.lower), end: new Date(b.upper) })),
-  ];
+  const leadMinutes = settings?.lead_minutes ?? LEAD_MINUTES;
+  const stepMinutes = settings?.slot_step_minutes ?? SLOT_STEP_MINUTES;
+  const bufferMinutes = settings?.buffer_minutes ?? 0;
+  const slotStepByDuration = settings ? settings.slot_step_by_duration !== false : true;
 
-  let leadMinutes = LEAD_MINUTES;
-  let stepMinutes = SLOT_STEP_MINUTES;
-  let bufferMinutes = 0;
-  try {
-    const settings = await getShopSettings();
-    leadMinutes = settings.lead_minutes;
-    stepMinutes = settings.slot_step_minutes;
-    bufferMinutes = settings.buffer_minutes;
-  } catch {
-    /* defaults */
-  }
-
-  const busyWithBuffer =
+  const withBuffer = (list: BusyPeriod[]) =>
     bufferMinutes > 0
-      ? busy.map((b) => ({
+      ? list.map((b) => ({
           start: b.start,
           end: new Date(b.end.getTime() + bufferMinutes * 60_000),
         }))
-      : busy;
+      : list;
 
-  return { windows, busy: busyWithBuffer, bufferMinutes, leadMinutes, stepMinutes };
+  const apptBusyBuf = withBuffer(apptBusy);
+  const busy = [...apptBusyBuf, ...blockBusy];
+
+  return {
+    windows,
+    busy,
+    apptBusy: apptBusyBuf,
+    blockBusy,
+    bufferMinutes,
+    leadMinutes,
+    stepMinutes,
+    slotStepByDuration,
+  };
 }
 
 export async function getAvailableSlots(
@@ -128,24 +142,29 @@ export async function getAvailableSlots(
 ): Promise<string[]> {
   const sql = getSql();
 
-  const [service] = await sql<{ duration_minutes: number }[]>`
-    select duration_minutes from services where id = ${serviceId}::uuid and active = true
-  `;
-  if (!service) return [];
+  const [serviceRows, day] = await Promise.all([
+    sql<{ duration_minutes: number }[]>`
+      select duration_minutes from services where id = ${serviceId}::uuid and active = true
+    `,
+    loadDayBusy(dateYmd, { excludeAppointmentId: opts?.excludeAppointmentId }),
+  ]);
 
-  const { windows, busy, leadMinutes, stepMinutes } = await loadDayBusy(dateYmd, {
-    excludeAppointmentId: opts?.excludeAppointmentId,
-  });
-  if (!windows.length) return [];
+  const service = serviceRows[0];
+  if (!service) return [];
+  if (!day.windows.length) return [];
+
+  const effectiveStep = day.slotStepByDuration
+    ? Math.max(1, service.duration_minutes)
+    : Math.max(1, day.stepMinutes);
 
   return computeAvailableSlots({
     dateYmd,
     durationMinutes: service.duration_minutes,
-    windows,
-    busy,
+    windows: day.windows,
+    busy: day.busy,
     now: opts?.now,
-    leadMinutes,
-    stepMinutes,
+    leadMinutes: day.leadMinutes,
+    stepMinutes: effectiveStep,
     bypassLead: opts?.bypassLead,
   });
 }
@@ -197,7 +216,7 @@ export async function validateBookablePeriod(opts: {
     return { ok: true, end, dateYmd };
   }
 
-  const { busy, leadMinutes } = await loadDayBusy(dateYmd, {
+  const { apptBusy, blockBusy, leadMinutes } = await loadDayBusy(dateYmd, {
     excludeAppointmentId: opts.excludeAppointmentId,
   });
 
@@ -208,8 +227,15 @@ export async function validateBookablePeriod(opts: {
     }
   }
 
-  const hit = busy.some((b) => overlaps(start, end, b.start, b.end));
-  if (hit) {
+  if (blockBusy.some((b) => overlaps(start, end, b.start, b.end))) {
+    return {
+      ok: false,
+      reason: "המספרה סגורה במועד זה (חג / סגירה מיוחדת)",
+      code: "closure",
+    };
+  }
+
+  if (apptBusy.some((b) => overlaps(start, end, b.start, b.end))) {
     return { ok: false, reason: "התור נתפס — בחרו שעה אחרת", code: "overlap" };
   }
 
@@ -231,6 +257,29 @@ export function fitsPreferredWindow(
     const open = timeToMins(String(w.start_time).slice(0, 5));
     const close = timeToMins(String(w.end_time).slice(0, 5));
     return startM >= open && endM <= close;
+  });
+}
+
+/** Slot ISO strings whose start falls inside preferred HH:mm windows. */
+export function slotsInPreferredWindows(
+  slotIsos: string[],
+  windows: { start: string; end: string }[],
+): string[] {
+  if (!windows.length) return slotIsos;
+  const norms = windows.map((w) => ({
+    start_time: String(w.start).slice(0, 5),
+    end_time: String(w.end).slice(0, 5),
+  }));
+  return slotIsos.filter((iso) => {
+    const start = new Date(iso);
+    // Prefer fit by start time only for booking slots (duration checked separately)
+    const hm = formatJerusalem(start, "HH:mm");
+    const m = timeToMins(hm);
+    return norms.some((w) => {
+      const open = timeToMins(w.start_time);
+      const close = timeToMins(w.end_time);
+      return m >= open && m < close;
+    });
   });
 }
 

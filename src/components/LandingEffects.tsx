@@ -156,19 +156,24 @@ export function LandingEffects() {
     reduce.addEventListener("change", syncVideo);
 
     applyOpenChip(fallbackByDay());
-    Promise.all([fetch("/api/hours"), fetch("/api/closures")])
-      .then(async ([hoursRes, closuresRes]) => {
-        const hoursData = await hoursRes.json().catch(() => null);
-        const closuresData = await closuresRes.json().catch(() => null);
-        applyOpenChip(hoursData?.byDay || fallbackByDay(), closuresData?.closures || []);
-      })
-      .catch(() => {
-        /* keep fallback */
-      });
+    const loadOpen = () => {
+      Promise.all([fetch("/api/hours"), fetch("/api/closures")])
+        .then(async ([hoursRes, closuresRes]) => {
+          const hoursData = await hoursRes.json().catch(() => null);
+          const closuresData = await closuresRes.json().catch(() => null);
+          applyOpenChip(hoursData?.byDay || fallbackByDay(), closuresData?.closures || []);
+        })
+        .catch(() => {
+          /* keep fallback */
+        });
+    };
+    loadOpen();
+    window.addEventListener("lidor:hours-changed", loadOpen);
 
     return () => {
       io.disconnect();
       window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("lidor:hours-changed", loadOpen);
       mq.removeEventListener("change", syncVideo);
       reduce.removeEventListener("change", syncVideo);
       clearTimeout(sweep);

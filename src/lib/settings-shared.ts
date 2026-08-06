@@ -10,6 +10,8 @@ export type ShopSettings = {
   min_client_cancel_minutes: number;
   lead_minutes: number;
   slot_step_minutes: number;
+  /** When true, offered starts step by the selected service duration (not fixed slot_step). */
+  slot_step_by_duration: boolean;
   buffer_minutes: number;
   reminder_hours_before: number;
   notify_confirmation: boolean;
@@ -31,6 +33,7 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   min_client_cancel_minutes: 60,
   lead_minutes: 30,
   slot_step_minutes: 15,
+  slot_step_by_duration: true,
   buffer_minutes: 0,
   reminder_hours_before: 24,
   notify_confirmation: true,

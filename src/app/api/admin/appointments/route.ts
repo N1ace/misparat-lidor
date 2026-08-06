@@ -7,7 +7,7 @@ import { smsConfirmation, smsReminder, emailConfirmation, emailReminder, smsResc
 import { clampName, NAME_LIMITS } from "@/lib/name-limits";
 import { formatJerusalem, wallTimeToUtc } from "@/lib/time";
 import { upsertClient, getClientByPhone } from "@/lib/clients";
-import { getShopSettings } from "@/lib/settings";
+import { getLiveShop, getShopSettings } from "@/lib/settings";
 import { validateBookablePeriod } from "@/lib/availability";
 import { onSlotFreed } from "@/lib/waitlist";
 
@@ -211,7 +211,7 @@ export async function PATCH(req: NextRequest) {
       excludeAppointmentId: body.id,
       forceOutsideHours: true,
     });
-    if (!check.ok && check.code === "overlap") {
+    if (!check.ok && (check.code === "overlap" || check.code === "closure")) {
       return NextResponse.json({ error: check.reason, code: check.code }, { status: 409 });
     }
   }
@@ -284,7 +284,7 @@ export async function PATCH(req: NextRequest) {
       const cancelUrl = `${origin}/cancel/${existing.cancel_token}`;
       try {
         if (channel === "sms") {
-          const bodySms = smsReschedule({ name: finalName, service: finalService, startAt: start });
+          const bodySms = smsReschedule({ name: finalName, service: finalService, startAt: start, shop: await getLiveShop() });
           await sql`
             insert into outbox (appointment_id, kind, channel, recipient, body, send_after)
             values (${body.id}::uuid, 'reschedule', 'sms', ${finalPhone}, ${bodySms}, now())
@@ -297,6 +297,7 @@ export async function PATCH(req: NextRequest) {
             service: finalService,
             startAt: start,
             cancelUrl,
+            shop: await getLiveShop(),
           });
           await sql`
             insert into outbox (appointment_id, kind, channel, recipient, body, send_after)
@@ -360,6 +361,7 @@ export async function POST(req: NextRequest) {
   const notes = body.notes?.trim() ? clampName(body.notes, NAME_LIMITS.notes) : null;
 
   const settings = await getShopSettings();
+  const shop = await getLiveShop();
   const sql = getSql();
   const [service] = await sql<{
     id: string;
@@ -404,7 +406,7 @@ export async function POST(req: NextRequest) {
       bypassLead: true,
       forceOutsideHours: true,
     });
-    if (!check.ok && check.code === "overlap") {
+    if (!check.ok && (check.code === "overlap" || check.code === "closure")) {
       return NextResponse.json({ error: check.reason, code: check.code }, { status: 409 });
     }
   }
@@ -426,8 +428,8 @@ export async function POST(req: NextRequest) {
   );
   const reminderSend = reminderAt < new Date() ? new Date() : reminderAt;
 
-  const smsConfirm = smsConfirmation({ name: clientName, service: service.name, startAt: start });
-  const smsRem = smsReminder({ time: formatJerusalem(start, "HH:mm") });
+  const smsConfirm = smsConfirmation({ name: clientName, service: service.name, startAt: start, shop });
+  const smsRem = smsReminder({ time: formatJerusalem(start, "HH:mm"), shop });
 
   try {
     const saved = (await sql.begin(async (tx) => {
@@ -455,14 +457,14 @@ export async function POST(req: NextRequest) {
         `;
       }
       if (email && settings.notify_confirmation) {
-        const mc = emailConfirmation({ name: clientName, service: service.name, startAt: start, cancelUrl });
+        const mc = emailConfirmation({ name: clientName, service: service.name, startAt: start, cancelUrl, shop });
         await tx`
           insert into outbox (appointment_id, kind, channel, recipient, body, send_after)
           values (${row.id}::uuid, 'confirmation', 'email', ${email}, ${`${mc.subject}\n\n${mc.text}`}, now())
         `;
       }
       if (email && settings.notify_reminder) {
-        const mr = emailReminder({ name: clientName, service: service.name, startAt: start, cancelUrl });
+        const mr = emailReminder({ name: clientName, service: service.name, startAt: start, cancelUrl, shop });
         await tx`
           insert into outbox (appointment_id, kind, channel, recipient, body, send_after)
           values (${row.id}::uuid, 'reminder', 'email', ${email}, ${`${mr.subject}\n\n${mr.text}`}, ${reminderSend.toISOString()}::timestamptz)

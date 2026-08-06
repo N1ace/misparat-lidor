@@ -11,6 +11,7 @@ import type { ReliabilityColor, ReliabilityStat } from "@/lib/client-reliability
 import { NAME_LIMITS, truncateLabel } from "@/lib/name-limits";
 import { formatIsraeliPhone } from "@/lib/phone";
 import { TZ } from "@/lib/shop";
+import { IconTrash } from "@/components/icons";
 
 type Client = {
   id: string;
@@ -45,7 +46,18 @@ type ReliabilityFilter = "all" | ReliabilityColor | "repeat_no_show";
 type SortColumn = "name" | "score" | "total_bookings" | "last_booking";
 type SortDirection = "asc" | "desc";
 
-const emptyForm = { name: "", phone: "", email: "", notes: "" };
+const emptyForm = { firstName: "", lastName: "", phone: "", email: "", notes: "" };
+
+function splitClientName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { firstName: "", lastName: "" };
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
+
+function joinClientName(firstName: string, lastName: string) {
+  return [firstName.trim(), lastName.trim()].filter(Boolean).join(" ").slice(0, NAME_LIMITS.person);
+}
 
 function ReliabilityDot({
   color,
@@ -70,20 +82,6 @@ function IconPencil() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path
         d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function IconTrash() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M3 6h18M8 6V4h8v2m-1 0v14a2 2 0 01-2 2H9a2 2 0 01-2-2V6h10z"
         stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
@@ -119,6 +117,8 @@ export function ClientsPanel() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/clients");
@@ -209,8 +209,10 @@ export function ClientsPanel() {
 
   async function openEdit(c: Client) {
     setSelected(c);
+    const parts = splitClientName(c.name);
     setForm({
-      name: c.name,
+      firstName: parts.firstName,
+      lastName: parts.lastName,
       phone: c.phone,
       email: c.email || "",
       notes: c.notes || "",
@@ -250,6 +252,15 @@ export function ClientsPanel() {
 
   async function submitModal(e: React.FormEvent) {
     e.preventDefault();
+    const name = joinClientName(form.firstName, form.lastName);
+    if (!name || !form.phone.trim()) {
+      setError("שם פרטי, שם משפחה וטלפון חובה");
+      return;
+    }
+    if (modal === "add" && !form.lastName.trim()) {
+      setError("שם משפחה חובה");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -257,7 +268,12 @@ export function ClientsPanel() {
         const res = await fetch("/api/admin/clients", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
+          body: JSON.stringify({
+            name,
+            phone: form.phone,
+            email: form.email || null,
+            notes: form.notes || null,
+          }),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -273,7 +289,7 @@ export function ClientsPanel() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             id: selected.id,
-            name: form.name,
+            name,
             phone: form.phone,
             email: form.email || null,
             notes: form.notes || null,
@@ -295,14 +311,36 @@ export function ClientsPanel() {
     }
   }
 
-  async function removeClient(c: Client) {
-    if (!confirm(`למחוק את הלקוח "${c.name}"?`)) return;
-    await fetch(`/api/admin/clients?id=${c.id}`, { method: "DELETE" });
-    if (selected?.id === c.id) {
-      setSelected(null);
-      setModal(null);
+  function askRemoveClient(c: Client) {
+    setError(null);
+    setDeleteTarget(c);
+  }
+
+  async function confirmRemoveClient(withHistory: boolean) {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/admin/clients?id=${deleteTarget.id}&withHistory=${withHistory ? "1" : "0"}`,
+        { method: "DELETE" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "שגיאה במחיקה");
+        return;
+      }
+      if (selected?.id === deleteTarget.id) {
+        setSelected(null);
+        setModal(null);
+      }
+      setDeleteTarget(null);
+      await load();
+    } catch {
+      setError("שגיאת רשת");
+    } finally {
+      setDeleting(false);
     }
-    await load();
   }
 
   function sortMark(col: SortColumn) {
@@ -447,7 +485,7 @@ export function ClientsPanel() {
                         className="admin-icon-btn danger"
                         title="מחיקה"
                         aria-label="מחיקה"
-                        onClick={() => void removeClient(c)}
+                        onClick={() => askRemoveClient(c)}
                       >
                         <IconTrash />
                       </button>
@@ -517,42 +555,69 @@ export function ClientsPanel() {
           }}
         >
           <form
-            className={`cal-modal-card${modal === "edit" ? " cal-modal-card--wide" : ""}`}
+            className={`cal-modal-card admin-client-modal${modal === "edit" ? " cal-modal-card--wide" : ""}`}
             onSubmit={submitModal}
           >
-            <div className="cal-modal-head">
-              <h2 className="admin-entity-title-row">
-                {modal === "edit" && reliability ? (
-                  <ReliabilityDot color={reliability.color} tooltip={reliability.tooltip} />
+            <div className="cal-modal-head cal-modal-head--stack">
+              <div className="cal-modal-head-text">
+                <h2 className="admin-entity-title-row">
+                  {modal === "edit" && reliability ? (
+                    <ReliabilityDot color={reliability.color} tooltip={reliability.tooltip} />
+                  ) : null}
+                  {modal === "add" ? "לקוח חדש" : selected?.name || "עריכת לקוח"}
+                </h2>
+                {modal === "add" ? (
+                  <p className="cal-modal-sub">
+                    הוסיפו רק לקוחות שהסכימו לשמירת פרטי הקשר לצורך תורים.
+                  </p>
                 ) : null}
-                {modal === "add" ? "לקוח חדש" : selected?.name || "עריכת לקוח"}
-              </h2>
-              <button type="button" className="cal-chip" onClick={() => setModal(null)}>
-                סגור
+              </div>
+              <button type="button" className="cal-icon-btn" onClick={() => setModal(null)} aria-label="סגור">
+                ×
               </button>
             </div>
             <div className="cal-modal-body">
               <label>
-                <span>שם</span>
+                <span>
+                  שם פרטי <abbr className="admin-req" title="שדה חובה">*</abbr>
+                </span>
                 <input
                   required
-                  value={form.name}
+                  autoFocus={modal === "add"}
+                  value={form.firstName}
                   maxLength={NAME_LIMITS.person}
                   onChange={(e) =>
-                    setForm({ ...form, name: e.target.value.slice(0, NAME_LIMITS.person) })
+                    setForm({ ...form, firstName: e.target.value.slice(0, NAME_LIMITS.person) })
                   }
-                  autoComplete="name"
+                  autoComplete="given-name"
                 />
               </label>
               <label>
-                <span>טלפון</span>
+                <span>
+                  שם משפחה <abbr className="admin-req" title="שדה חובה">*</abbr>
+                </span>
+                <input
+                  required={modal === "add"}
+                  value={form.lastName}
+                  maxLength={NAME_LIMITS.person}
+                  onChange={(e) =>
+                    setForm({ ...form, lastName: e.target.value.slice(0, NAME_LIMITS.person) })
+                  }
+                  autoComplete="family-name"
+                />
+              </label>
+              <label>
+                <span>
+                  טלפון <abbr className="admin-req" title="שדה חובה">*</abbr>
+                </span>
                 <input
                   required
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   inputMode="tel"
                   autoComplete="tel"
-                  placeholder="05X-XXX-XXXX"
+                  placeholder="054-1234567"
+                  dir="ltr"
                 />
               </label>
               <label>
@@ -562,19 +627,22 @@ export function ClientsPanel() {
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   type="email"
                   dir="ltr"
+                  autoComplete="email"
                 />
               </label>
-              <label>
-                <span>הערות</span>
-                <textarea
-                  value={form.notes}
-                  maxLength={NAME_LIMITS.notes}
-                  onChange={(e) =>
-                    setForm({ ...form, notes: e.target.value.slice(0, NAME_LIMITS.notes) })
-                  }
-                  rows={3}
-                />
-              </label>
+              {modal === "edit" ? (
+                <label>
+                  <span>הערות</span>
+                  <textarea
+                    value={form.notes}
+                    maxLength={NAME_LIMITS.notes}
+                    onChange={(e) =>
+                      setForm({ ...form, notes: e.target.value.slice(0, NAME_LIMITS.notes) })
+                    }
+                    rows={3}
+                  />
+                </label>
+              ) : null}
               {error ? <p className="cal-error">{error}</p> : null}
 
               {modal === "edit" ? (
@@ -656,22 +724,81 @@ export function ClientsPanel() {
               ) : null}
             </div>
             <div className="cal-modal-actions">
+              <button type="submit" className="admin-btn-primary" disabled={saving}>
+                {saving ? "שומר…" : "שמירה"}
+              </button>
+              <button type="button" className="admin-btn-secondary" onClick={() => setModal(null)}>
+                ביטול
+              </button>
               {modal === "edit" && selected ? (
                 <button
                   type="button"
                   className="admin-danger-link"
-                  onClick={() => void removeClient(selected)}
+                  onClick={() => selected && askRemoveClient(selected)}
                 >
                   מחק לקוח
                 </button>
-              ) : (
-                <span />
-              )}
-              <button type="submit" className="admin-btn-primary" disabled={saving}>
-                {saving ? "שומר…" : modal === "add" ? "הוסף לקוח" : "שמור שינויים"}
-              </button>
+              ) : null}
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div
+          className="cal-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="מחיקת לקוח"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !deleting) setDeleteTarget(null);
+          }}
+        >
+          <div className="cal-modal-card">
+            <div className="cal-modal-head">
+              <h2>מחיקת לקוח</h2>
+              <button
+                type="button"
+                className="cal-icon-btn"
+                disabled={deleting}
+                aria-label="סגור"
+                onClick={() => setDeleteTarget(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="cal-modal-body">
+              <p className="admin-hint">
+                למחוק את <strong>{deleteTarget.name}</strong>? בחרו מה יימחק:
+              </p>
+            </div>
+            <div className="cal-modal-actions">
+              <button
+                type="button"
+                className="admin-btn-danger"
+                disabled={deleting}
+                onClick={() => void confirmRemoveClient(false)}
+              >
+                {deleting ? "מוחק…" : "לקוח בלבד"}
+              </button>
+              <button
+                type="button"
+                className="admin-btn-danger"
+                disabled={deleting}
+                onClick={() => void confirmRemoveClient(true)}
+              >
+                {deleting ? "מוחק…" : "לקוח כולל היסטוריה"}
+              </button>
+              <button
+                type="button"
+                className="admin-btn-secondary"
+                disabled={deleting}
+                onClick={() => setDeleteTarget(null)}
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

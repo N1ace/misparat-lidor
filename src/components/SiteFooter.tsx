@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { SHOP, waMe } from "@/lib/shop";
+import { waMe, type ShopPublic, SHOP } from "@/lib/shop";
 
-export function SiteFooter() {
+export function SiteFooter({ shop = SHOP }: { shop?: ShopPublic }) {
   return (
     <footer className="site">
       <div className="wrap">
@@ -9,7 +9,7 @@ export function SiteFooter() {
           <div>
             <Link className="logo" href="/">
               <span className="icn i-sign" aria-hidden="true" />
-              {SHOP.name}
+              {shop.name}
             </Link>
             <p style={{ color: "var(--muted)", maxInlineSize: "38ch", marginBlockStart: "0.8rem" }}>
               מספרה באשדוד — תספורות מדויקות, זקן, וילדים. קובעים תור אונליין, מגיעים בשעה.
@@ -24,16 +24,16 @@ export function SiteFooter() {
             <Link href="/booking">קביעת תור</Link>
           </nav>
           <div className="footer-aside">
-            <a className="phone-ltr footer-phone" href={`tel:${SHOP.phoneE164}`}>
-              <bdi>{SHOP.phoneDisplay}</bdi>
+            <a className="phone-ltr footer-phone" href={`tel:${shop.phoneE164}`}>
+              <bdi>{shop.phoneDisplay}</bdi>
             </a>
-            <p style={{ color: "var(--muted)", marginBlock: "0.5rem 0" }}>{SHOP.addressShort}</p>
+            <p style={{ color: "var(--muted)", marginBlock: "0.5rem 0" }}>{shop.addressShort}</p>
             <div className="footer-social">
               <h3>רשתות חברתיות</h3>
               <div className="social-row">
                 <a
                   className="social-btn social-wa"
-                  href={waMe("היי, רציתי לשאול לגבי תור")}
+                  href={waMe("היי, רציתי לשאול לגבי תור", shop)}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="וואטסאפ"
@@ -48,7 +48,7 @@ export function SiteFooter() {
           </div>
         </div>
         <p className="fine">
-          © <bdi>{new Date().getFullYear()}</bdi> {SHOP.name}. כל הזכויות שמורות.
+          © <bdi>{new Date().getFullYear()}</bdi> {shop.name}. כל הזכויות שמורות.
         </p>
       </div>
     </footer>

@@ -387,9 +387,9 @@ nav.main a:hover{ color:var(--brass-hi); }
 .field{ margin-block-end:1.1rem; }
 .field label{ display:block; font-weight:700; margin-block-end:.35rem; }
 .field input[type=text], .field input[type=tel], .field textarea{
-  inline-size:100%; padding:.75rem .9rem; border-radius:8px; min-block-size:48px;
+  inline-size:100%; padding:.48rem .75rem; border-radius:8px; min-block-size:2.4rem;
   border:1.5px solid var(--line); background:var(--bg); color:var(--ivory);
-  font:400 1.05rem 'Assistant'; 
+  font:400 .95rem 'Assistant';
 }
 .field input:focus, .field textarea:focus{ outline:none; border-color:var(--brass); }
 input[type=tel]{ direction:ltr; text-align:end; } /* phone stays LTR inside RTL */
@@ -664,12 +664,24 @@ footer .footer-legal a{ font-size:.92rem; justify-content:flex-start; }
 .booking-page .day-chip.on,
 .client-portal-page .day-chip.on{ background:var(--brass); color:#171207; border-color:var(--brass); font-weight:800; }
 .booking-page input,
-.client-portal-page input{
+.booking-page select,
+.booking-page textarea,
+.client-portal-page input,
+.client-portal-page select,
+.client-portal-page textarea{
   width:100%; max-width:100%; border:1px solid var(--line); background:var(--surface); color:var(--ivory);
-  border-radius:var(--radius); padding:.9rem 1rem; font:inherit; min-width:0; box-sizing:border-box;
+  border-radius:10px; padding:.48rem .75rem; font:inherit; font-size:.95rem;
+  min-width:0; min-block-size:2.4rem; box-sizing:border-box;
+}
+.booking-page .bf-identity input,
+.booking-page .bf-waitlist-form input,
+.booking-page .bf-waitlist-form select,
+.booking-page .time-select-24{
+  min-block-size:2.35rem;
+  padding-block:.42rem;
 }
 .booking-page label > span,
-.client-portal-page label > span{ display:block; margin-block-end:.4rem; color:var(--muted); font-size:.92rem; font-weight:600; }
+.client-portal-page label > span{ display:block; margin-block-end:.28rem; color:var(--muted); font-size:.85rem; font-weight:600; }
 .booking-page .err,
 .client-portal-page .err{ color:#f0b4a8; border:1px solid rgba(168,69,58,.4); background:rgba(168,69,58,.12); border-radius:var(--radius); padding:.95rem 1.05rem; }
 .booking-page .done-card,
@@ -749,8 +761,9 @@ footer .footer-legal a{ font-size:.92rem; justify-content:flex-start; }
 .bf-cal-empty{ min-block-size:2.5rem; }
 .bf-slots-block h3{ margin:0 0 .75rem; font-size:1.05rem; }
 
-.bf-identity{ display:flex; flex-direction:column; gap:.85rem; }
+.bf-identity{ display:flex; flex-direction:column; gap:.7rem; }
 .bf-identity h2{ margin:0; }
+.bf-identity label{ display:grid; gap:.28rem; }
 .bf-channel{
   border:1px solid var(--line); border-radius:var(--radius); padding:.75rem 1rem; margin:0;
   display:flex; gap:1rem; flex-wrap:wrap;

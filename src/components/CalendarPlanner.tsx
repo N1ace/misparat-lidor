@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatInTimeZone } from "date-fns-tz";
 import { TimeSelect24 } from "@/components/TimeSelect24";
+import { ClientPhoneSuggest } from "@/components/ClientPhoneSuggest";
 import {
   normalizeServiceColor,
   serviceTintStyle,
@@ -242,12 +243,15 @@ export function CalendarPlanner({ services }: { services: Service[] }) {
     const onVis = () => {
       if (document.visibilityState === "visible") loadHours();
     };
+    const onHoursChanged = () => loadHours();
     window.addEventListener("focus", loadHours);
     document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("lidor:hours-changed", onHoursChanged);
     return () => {
       cancelled = true;
       window.removeEventListener("focus", loadHours);
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("lidor:hours-changed", onHoursChanged);
     };
   }, []);
 
@@ -686,12 +690,19 @@ export function CalendarPlanner({ services }: { services: Service[] }) {
             </div>
             <div className="cal-modal-body">
               <label>
-                <span>תאריך</span>
-                <input type="date" required value={addDate} onChange={(e) => setAddDate(e.target.value)} />
+                <span>שעה</span>
+                <TimeSelect24
+                  required
+                  split
+                  value={addTime}
+                  onChange={setAddTime}
+                  stepMinutes={15}
+                  aria-label="שעה"
+                />
               </label>
               <label>
-                <span>שעה</span>
-                <TimeSelect24 required value={addTime} onChange={setAddTime} stepMinutes={15} />
+                <span>תאריך</span>
+                <input type="date" required value={addDate} onChange={(e) => setAddDate(e.target.value)} />
               </label>
               <label>
                 <span>שירות</span>
@@ -704,28 +715,31 @@ export function CalendarPlanner({ services }: { services: Service[] }) {
                 </select>
               </label>
               <label>
-                <span>שם</span>
+                <span>לקוח</span>
                 <input
                   required
                   value={addName}
                   maxLength={NAME_LIMITS.person}
                   onChange={(e) => setAddName(e.target.value.slice(0, NAME_LIMITS.person))}
                   autoComplete="name"
+                  placeholder="שם הלקוח"
                 />
               </label>
+              <ClientPhoneSuggest
+                phone={addPhone}
+                name={addName}
+                onPhoneChange={setAddPhone}
+                onNameChange={setAddName}
+                required
+              />
               <label>
-                <span>טלפון</span>
-                <input
-                  required
-                  value={addPhone}
-                  onChange={(e) => setAddPhone(e.target.value)}
-                  inputMode="tel"
-                  placeholder="05X-XXX-XXXX"
+                <span>תזכורת / הערה (אופציונלי)</span>
+                <textarea
+                  value={addNotes}
+                  onChange={(e) => setAddNotes(e.target.value)}
+                  rows={3}
+                  placeholder="הערה פנימית…"
                 />
-              </label>
-              <label>
-                <span>הערות</span>
-                <input value={addNotes} onChange={(e) => setAddNotes(e.target.value)} />
               </label>
               {modal === "edit" ? (
                 <label>
@@ -772,11 +786,11 @@ export function CalendarPlanner({ services }: { services: Service[] }) {
               ) : null}
             </div>
             <div className="cal-modal-actions">
-              <button type="button" className="cal-chip" onClick={() => setModal(null)}>
-                סגור
-              </button>
               <button type="submit" className="admin-btn-primary" disabled={saving || !services.length}>
-                {saving ? "שומר…" : modal === "add" ? "קבע תור" : "שמור שינויים"}
+                {saving ? "שומר…" : "שמירה"}
+              </button>
+              <button type="button" className="admin-btn-secondary" onClick={() => setModal(null)}>
+                ביטול
               </button>
             </div>
           </form>

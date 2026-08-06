@@ -1,16 +1,10 @@
 import { getSql } from "@/lib/db";
-import { SHOP } from "@/lib/shop";
-import { getShopSettings } from "@/lib/settings";
+import { getLiveShop, getShopSettings } from "@/lib/settings";
 import { ClientPortal } from "@/components/ClientPortal";
 import type { BookingService } from "@/components/BookingFlow";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
-
-export const metadata: Metadata = {
-  title: `קביעת תור · ${SHOP.name}`,
-  description: `קביעת תור אונליין ב${SHOP.name}, ${SHOP.addressShort}`,
-};
 
 async function loadServices(): Promise<BookingService[]> {
   try {
@@ -26,13 +20,25 @@ async function loadServices(): Promise<BookingService[]> {
   }
 }
 
+export async function generateMetadata(): Promise<Metadata> {
+  const shop = await getLiveShop();
+  return {
+    title: `קביעת תור · ${shop.name}`,
+    description: `קביעת תור אונליין ב${shop.name}, ${shop.addressShort}`,
+  };
+}
+
 export default async function BookingPage({
   searchParams,
 }: {
   searchParams: Promise<{ service?: string; tab?: string }>;
 }) {
   const { service: preselect, tab } = await searchParams;
-  const [services, settings] = await Promise.all([loadServices(), getShopSettings()]);
+  const [services, settings, shop] = await Promise.all([
+    loadServices(),
+    getShopSettings(),
+    getLiveShop(),
+  ]);
 
   return (
     <>
@@ -44,6 +50,7 @@ export default async function BookingPage({
             horizonDays={settings.online_booking_horizon_days}
             initialTab={tab}
             initialService={preselect}
+            shop={shop}
           />
         </div>
       </main>

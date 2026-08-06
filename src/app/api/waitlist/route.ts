@@ -5,7 +5,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { getShopSettings } from "@/lib/settings";
 import { normalizePhoneIL } from "@/lib/phone";
 import { clampName, NAME_LIMITS } from "@/lib/name-limits";
-import { getAvailableSlots } from "@/lib/availability";
+import { getAvailableSlots, slotsInPreferredWindows } from "@/lib/availability";
 import { smsWaitlistJoined } from "@/lib/messages";
 import { readClientSession } from "@/lib/client-auth";
 
@@ -87,13 +87,51 @@ export async function POST(req: NextRequest) {
   `;
   if (!service) return NextResponse.json({ error: "שירות לא נמצא" }, { status: 404 });
 
-  // Only when the day has no public slots for this service
   const slots = await getAvailableSlots(parsed.data.targetDate, service.id);
-  if (slots.length > 0) {
+  const dayHasBookings = await sql<{ n: number }[]>`
+    select count(*)::int as n from appointments
+    where status in ('confirmed','held','done')
+      and (timezone('Asia/Jerusalem', lower(period)))::date = ${parsed.data.targetDate}::date
+  `.then((r) => (r[0]?.n || 0) > 0);
+
+  // Closed / empty day with nothing taken — waitlist is not relevant
+  if (slots.length === 0 && !dayHasBookings) {
     return NextResponse.json(
-      { error: "יש עדיין תורים פנויים ביום הזה — קבעו תור רגיל", code: "has_slots" },
+      {
+        error: "ביום הזה אין תורים תפוסים ואין צורך ברשימת המתנה — בחרו יום אחר או בדקו שעות פעילות",
+        code: "day_empty",
+      },
       { status: 409 },
     );
+  }
+
+  if (anyTime && slots.length > 0) {
+    return NextResponse.json(
+      { error: "יש עדיין תורים פנויים ביום הזה — קבעו תור רגיל", code: "has_slots", slots: slots.slice(0, 8) },
+      { status: 409 },
+    );
+  }
+
+  if (!anyTime && windows.length) {
+    const openInPref = slotsInPreferredWindows(
+      slots,
+      windows.map((w) => ({ start: w.start, end: w.end })),
+    );
+    if (openInPref.length > 0) {
+      return NextResponse.json(
+        {
+          error: "בחלון השעות שבחרתם יש תור פנוי — אפשר לקבוע אותו עכשיו",
+          code: "open_slots",
+          slots: openInPref.slice(0, 8),
+        },
+        { status: 409 },
+      );
+    }
+  }
+
+  // Prefer anyTime only when the day is fully booked
+  if (!anyTime && slots.length > 0 && !windows.length) {
+    return NextResponse.json({ error: "בחרו חלון שעות או ׳כל היום׳" }, { status: 400 });
   }
 
   const [countRow] = await sql<{ n: number }[]>`

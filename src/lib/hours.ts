@@ -13,6 +13,11 @@ export type DayWindows = Record<
   { open: string; close: string; openMins: number; closeMins: number }[]
 >;
 
+const WINDOWS_TTL_MS = 30_000;
+
+let seedPromise: Promise<void> | null = null;
+let windowsCache: { at: number; value: WorkingWindow[] } | null = null;
+
 function timeToMins(hhmm: string): number {
   const [h, m] = String(hhmm).slice(0, 5).split(":").map(Number);
   return h * 60 + m;
@@ -24,27 +29,44 @@ function minsToTime(mins: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-/** Seed DB from website HOURS constants when the table is empty. */
+/** Seed DB from website HOURS constants when the table is empty (once per process). */
 export async function ensureWorkingHoursSeeded(): Promise<void> {
-  const sql = getSql();
-  const [row] = await sql<{ count: number }[]>`
-    select count(*)::int as count from working_hours
-  `;
-  if (row && row.count > 0) return;
-
-  for (let dow = 0; dow <= 6; dow++) {
-    const range = HOURS[dow];
-    if (!range) continue;
-    const open = minsToTime(range[0]);
-    const close = minsToTime(range[1]);
-    await sql`
-      insert into working_hours (day_of_week, open_time, close_time)
-      values (${dow}, ${open}::time, ${close}::time)
+  if (seedPromise) return seedPromise;
+  seedPromise = (async () => {
+    const sql = getSql();
+    const [row] = await sql<{ count: number }[]>`
+      select count(*)::int as count from working_hours
     `;
-  }
+    if (row && row.count > 0) return;
+
+    for (let dow = 0; dow <= 6; dow++) {
+      const range = HOURS[dow];
+      if (!range) continue;
+      const open = minsToTime(range[0]);
+      const close = minsToTime(range[1]);
+      await sql`
+        insert into working_hours (day_of_week, open_time, close_time)
+        values (${dow}, ${open}::time, ${close}::time)
+      `;
+    }
+  })().catch((err) => {
+    seedPromise = null;
+    throw err;
+  });
+  return seedPromise;
+}
+
+export function invalidateWorkingHoursCache(): void {
+  windowsCache = null;
+  // Allow re-seed check after admin wipe (rare)
+  seedPromise = null;
 }
 
 export async function getWorkingWindows(): Promise<WorkingWindow[]> {
+  const now = Date.now();
+  if (windowsCache && now - windowsCache.at < WINDOWS_TTL_MS) {
+    return windowsCache.value;
+  }
   await ensureWorkingHoursSeeded();
   const sql = getSql();
   const rows = await sql<{ day_of_week: number; open_time: string; close_time: string }[]>`
@@ -52,11 +74,23 @@ export async function getWorkingWindows(): Promise<WorkingWindow[]> {
     from working_hours
     order by day_of_week, open_time
   `;
-  return rows.map((r) => ({
+  const value = rows.map((r) => ({
     day_of_week: r.day_of_week,
     open_time: String(r.open_time).slice(0, 5),
     close_time: String(r.close_time).slice(0, 5),
   }));
+  windowsCache = { at: now, value };
+  return value;
+}
+
+/** Windows for a single Jerusalem weekday (0=Sun … 6=Sat). */
+export async function getWindowsForDow(
+  dow: number,
+): Promise<{ open_time: string; close_time: string }[]> {
+  const all = await getWorkingWindows();
+  return all
+    .filter((w) => w.day_of_week === dow)
+    .map((w) => ({ open_time: w.open_time, close_time: w.close_time }));
 }
 
 export function groupWindowsByDay(windows: WorkingWindow[]): DayWindows {

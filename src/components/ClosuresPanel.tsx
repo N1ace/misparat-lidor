@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatInTimeZone } from "date-fns-tz";
-import { TZ } from "@/lib/shop";
 import { TimeSelect24 } from "@/components/TimeSelect24";
+import { IconPencil, IconTrash } from "@/components/icons";
+import { TZ } from "@/lib/shop";
 
 type Closure = {
   id: string;
@@ -19,7 +20,8 @@ function todayYmd() {
 
 export function ClosuresPanel() {
   const [closures, setClosures] = useState<Closure[]>([]);
-  const [modal, setModal] = useState(false);
+  const [modal, setModal] = useState<"add" | "edit" | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [allDay, setAllDay] = useState(true);
@@ -42,47 +44,75 @@ export function ClosuresPanel() {
   useEffect(() => {
     if (!modal) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setModal(false);
+      if (e.key === "Escape") setModal(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [modal]);
 
-  function openAdd() {
+  function resetForm() {
     setAllDay(true);
     setDateYmd(todayYmd());
     setEndDateYmd("");
     setStartTime("09:00");
     setEndTime("13:00");
     setReason("");
+    setEditId(null);
     setError(null);
-    setModal(true);
   }
 
-  async function create(e: React.FormEvent) {
+  function openAdd() {
+    resetForm();
+    setModal("add");
+  }
+
+  function openEdit(c: Closure) {
+    setError(null);
+    setEditId(c.id);
+    setAllDay(c.all_day);
+    setDateYmd(formatInTimeZone(c.start, TZ, "yyyy-MM-dd"));
+    setStartTime(formatInTimeZone(c.start, TZ, "HH:mm"));
+    setEndTime(formatInTimeZone(c.end, TZ, "HH:mm"));
+    const endDay = formatInTimeZone(c.end, TZ, "yyyy-MM-dd");
+    const startDay = formatInTimeZone(c.start, TZ, "yyyy-MM-dd");
+    setEndDateYmd(c.all_day && endDay !== startDay ? endDay : "");
+    setReason(c.reason || "");
+    setModal("edit");
+  }
+
+  function closeModal() {
+    setModal(null);
+    setEditId(null);
+    setError(null);
+  }
+
+  async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
+      const payload = {
+        id: editId || undefined,
+        dateYmd,
+        endDateYmd: allDay && endDateYmd ? endDateYmd : undefined,
+        allDay,
+        startTime: allDay ? undefined : startTime,
+        endTime: allDay ? undefined : endTime,
+        reason: reason || undefined,
+      };
       const res = await fetch("/api/admin/closures", {
-        method: "POST",
+        method: modal === "edit" ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dateYmd,
-          endDateYmd: endDateYmd || undefined,
-          allDay,
-          startTime: allDay ? undefined : startTime,
-          endTime: allDay ? undefined : endTime,
-          reason: reason || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "שגיאה");
         return;
       }
-      setModal(false);
+      closeModal();
       await load();
+      window.dispatchEvent(new Event("lidor:hours-changed"));
     } catch {
       setError("שגיאת רשת");
     } finally {
@@ -94,6 +124,7 @@ export function ClosuresPanel() {
     if (!confirm(`למחוק את הסגירה "${label}"?`)) return;
     await fetch(`/api/admin/closures?id=${id}`, { method: "DELETE" });
     await load();
+    window.dispatchEvent(new Event("lidor:hours-changed"));
   }
 
   return (
@@ -122,14 +153,24 @@ export function ClosuresPanel() {
                 <span className="admin-entity-meta">{range}</span>
                 <span className="admin-badge">{c.all_day ? "יום שלם" : "שעות חלקיות"}</span>
               </div>
-              <div className="admin-entity-actions">
-                <span />
+              <div className="admin-entity-actions admin-entity-actions-wrap">
                 <button
                   type="button"
-                  className="admin-danger-link"
+                  className="admin-icon-btn"
+                  title="עריכה"
+                  aria-label="עריכה"
+                  onClick={() => openEdit(c)}
+                >
+                  <IconPencil />
+                </button>
+                <button
+                  type="button"
+                  className="admin-icon-btn danger"
+                  title="מחיקה"
+                  aria-label="מחיקה"
                   onClick={() => void remove(c.id, title)}
                 >
-                  מחק
+                  <IconTrash />
                 </button>
               </div>
             </article>
@@ -143,15 +184,15 @@ export function ClosuresPanel() {
           className="cal-modal"
           role="dialog"
           aria-modal="true"
-          aria-label="סגירה חדשה"
+          aria-label={modal === "edit" ? "עריכת סגירה" : "סגירה חדשה"}
           onClick={(e) => {
-            if (e.target === e.currentTarget) setModal(false);
+            if (e.target === e.currentTarget) closeModal();
           }}
         >
-          <form className="cal-modal-card" onSubmit={(e) => void create(e)}>
+          <form className="cal-modal-card" onSubmit={(e) => void save(e)}>
             <div className="cal-modal-head">
-              <h2>סגירה חדשה</h2>
-              <button type="button" className="cal-chip" onClick={() => setModal(false)}>
+              <h2>{modal === "edit" ? "עריכת סגירה" : "סגירה חדשה"}</h2>
+              <button type="button" className="cal-chip" onClick={closeModal}>
                 סגור
               </button>
             </div>
@@ -210,9 +251,11 @@ export function ClosuresPanel() {
               {error ? <p className="cal-error">{error}</p> : null}
             </div>
             <div className="cal-modal-actions">
-              <span />
               <button type="submit" className="admin-btn-primary" disabled={saving}>
-                {saving ? "שומר…" : "הוסף סגירה"}
+                {saving ? "שומר…" : modal === "edit" ? "שמירה" : "הוסף סגירה"}
+              </button>
+              <button type="button" className="admin-btn-secondary" onClick={() => setModal(null)}>
+                ביטול
               </button>
             </div>
           </form>

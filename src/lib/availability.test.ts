@@ -6,6 +6,22 @@ const windowsFull = [{ open_time: "09:00:00", close_time: "19:00:00" }];
 const windowsFri = [{ open_time: "09:00:00", close_time: "14:00:00" }];
 
 describe("computeAvailableSlots", () => {
+  it("when step equals duration, empty day only offers duration-aligned starts", () => {
+    const slots = computeAvailableSlots({
+      dateYmd: "2026-08-02",
+      durationMinutes: 30,
+      windows: windowsFull,
+      busy: [],
+      now: wallTimeToUtc("2026-08-02", "08:00:00"),
+      bypassLead: true,
+      stepMinutes: 30,
+    });
+    expect(slots).toContain(wallTimeToUtc("2026-08-02", "09:00:00").toISOString());
+    expect(slots).toContain(wallTimeToUtc("2026-08-02", "09:30:00").toISOString());
+    expect(slots).not.toContain(wallTimeToUtc("2026-08-02", "09:15:00").toISOString());
+    expect(slots).toContain(wallTimeToUtc("2026-08-02", "10:00:00").toISOString());
+  });
+
   it("offers back-to-back after a 10:00–10:30 booking for a 30-min service", () => {
     const busy = [
       {

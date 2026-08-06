@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { SHOP } from "@/lib/shop";
+import { useLiveShop } from "@/hooks/useLiveShop";
+import type { ShopPublic } from "@/lib/shop";
 
 const LANDING_LINKS = [
   { href: "/#services", label: "מחירון" },
@@ -12,7 +13,14 @@ const LANDING_LINKS = [
   { href: "/#location", label: "איפה אנחנו" },
 ];
 
-export function SiteHeader({ solid = false }: { solid?: boolean }) {
+export function SiteHeader({
+  solid = false,
+  shop: shopProp,
+}: {
+  solid?: boolean;
+  shop?: ShopPublic;
+}) {
+  const shop = useLiveShop(shopProp);
   const [scrolled, setScrolled] = useState(solid);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -35,9 +43,9 @@ export function SiteHeader({ solid = false }: { solid?: boolean }) {
   return (
     <header className={`site${scrolled || solid ? " solid" : ""}`} id="top">
       <div className="wrap bar">
-        <Link className="logo" href="/" aria-label={`${SHOP.name} — לדף הבית`}>
+        <Link className="logo" href="/" aria-label={`${shop.name} — לדף הבית`}>
           <span className="icn i-pole" aria-hidden="true" />
-          {SHOP.name}
+          {shop.name}
         </Link>
         <nav className="main" aria-label="ניווט ראשי">
           {LANDING_LINKS.map((l) => (
@@ -48,8 +56,8 @@ export function SiteHeader({ solid = false }: { solid?: boolean }) {
           <Link href="/booking">קביעת תור</Link>
         </nav>
         <div className="head-actions">
-          <a className="head-phone phone-ltr" href={`tel:${SHOP.phoneE164}`}>
-            <bdi>{SHOP.phoneDisplay}</bdi>
+          <a className="head-phone phone-ltr" href={`tel:${shop.phoneE164}`}>
+            <bdi>{shop.phoneDisplay}</bdi>
           </a>
           <Link className="btn btn-primary" href="/booking">
             קביעת תור

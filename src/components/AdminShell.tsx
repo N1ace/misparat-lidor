@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { useLiveShop } from "@/hooks/useLiveShop";
 import { SHOP } from "@/lib/shop";
 
 type NavItem = {
@@ -24,10 +25,7 @@ const MANAGE_BASE: NavItem[] = [
 ];
 
 const SETTINGS_NAV: NavItem[] = [
-  { href: "/admin/settings?tab=business", label: "עסק", icon: "shop" },
-  { href: "/admin/settings?tab=booking", label: "כללי הזמנה", icon: "gear" },
-  { href: "/admin/settings?tab=notifications", label: "התראות", icon: "bell" },
-  { href: "/admin/settings?tab=password", label: "סיסמה", icon: "key" },
+  { href: "/admin/settings", label: "הגדרות", icon: "gear" },
 ];
 
 function Icon({ name }: { name: NavItem["icon"] }) {
@@ -125,14 +123,11 @@ function Icon({ name }: { name: NavItem["icon"] }) {
   }
 }
 
-function navItemActive(pathname: string, search: string, item: NavItem) {
-  const [path, query = ""] = item.href.split("?");
+function navItemActive(pathname: string, _search: string, item: NavItem) {
+  const [path] = item.href.split("?");
   if (path === "/admin") return pathname === "/admin";
   if (path === "/admin/settings") {
-    if (!pathname.startsWith("/admin/settings")) return false;
-    const want = new URLSearchParams(query).get("tab") || "business";
-    const have = new URLSearchParams(search).get("tab") || "business";
-    return want === have;
+    return pathname.startsWith("/admin/settings");
   }
   return pathname === path || pathname.startsWith(path + "/");
 }
@@ -164,6 +159,7 @@ function NavLink({
 }
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
+  const shop = useLiveShop(SHOP);
   const path = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [waitlistEnabled, setWaitlistEnabled] = useState(true);
@@ -229,7 +225,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </svg>
         </span>
         <div>
-          <strong>{SHOP.name}</strong>
+          <strong>{shop.name}</strong>
           <span>מספרה · יש תור</span>
         </div>
       </div>
@@ -291,7 +287,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               <path d="M4 7h16M4 12h16M4 17h16" />
             </svg>
           </button>
-          <div className="admin-topbar-shop">{SHOP.name}</div>
+          <div className="admin-topbar-shop">{shop.name}</div>
         </header>
         <div className="admin-content">{children}</div>
       </div>
